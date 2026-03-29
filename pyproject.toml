@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tracer-llm"
+version = "0.1.0"
+description = "TRACER: Trace-Based Adaptive Cost-Efficient Routing. Turn LLM traces into parity-gated routing policies - cut 90%+ of LLM calls with formal guarantees."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+keywords = [
+    "llm", "routing", "surrogate", "cost-reduction", "learn-to-defer",
+    "conformal-prediction", "machine-learning", "explainability", "xai",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.21,<2.1",
+    "scikit-learn>=1.0",
+    "joblib>=1.1",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=2.2,<5",
+    "torch>=2.0",
+    "numpy>=1.21,<2.1",
+]
+faiss = ["faiss-cpu>=1.7"]
+notebooks = [
+    "faiss-cpu>=1.7",
+    "sentence-transformers>=2.2,<5",
+    "torch>=2.0",
+    "numpy>=1.21,<2.1",
+    "pandas>=1.4",
+    "matplotlib>=3.5",
+    "datasets>=2.0",
+    "huggingface_hub>=0.14",
+]
+xgboost = ["xgboost>=1.7"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+all = [
+    "sentence-transformers>=2.2,<5",
+    "torch>=2.0",
+    "numpy>=1.21,<2.1",
+    "faiss-cpu>=1.7",
+    "xgboost>=1.7",
+    "pandas>=1.4",
+    "matplotlib>=3.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/adrida/tracer"
+Repository = "https://github.com/adrida/tracer"
+Documentation = "https://github.com/adrida/tracer#readme"
+"Bug Tracker" = "https://github.com/adrida/tracer/issues"
+
+[project.scripts]
+tracer = "tracer.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tracer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

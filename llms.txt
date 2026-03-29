@@ -1,0 +1,35 @@
+# TRACER - tracer-llm
+
+> **TRACER** = Trace-Based Adaptive Cost-Efficient Routing.
+> Turn LLM classification traces into routing policies. Surrogate handles easy traffic; teacher LLM handles hard. Formal quality guarantees.
+
+## Install
+pip install tracer-llm
+
+## Core API (4 functions)
+tracer.fit("traces.jsonl", embeddings=X) → FitResult
+tracer.load_router(".tracer", embedder=e) → Router
+router.predict("text" or embedding) → {label, decision, accept_score}
+tracer.update("new.jsonl", embeddings=X_new) → FitResult
+
+## Trace format (JSONL, one per line)
+{"input": "user text", "teacher": "label_from_llm"}
+
+## Embedder (for text-in routing)
+Embedder.from_sentence_transformers("model-name")
+Embedder.from_endpoint("https://api/embed", headers={...})
+Embedder.from_callable(fn)
+
+## Docs
+- AGENTS.md - full integration guide for AI agents
+- README.md - user-facing docs
+- docs/api.md - Python API reference
+- docs/cli.md - CLI reference
+- docs/concepts.md - how it works
+- docs/artifacts.md - .tracer/ directory schema
+
+## Paper
+Research paper in preparation -- covers formal guarantees, ablation studies, and reproducible experiments.
+
+## Repo
+https://github.com/adrida/tracer
