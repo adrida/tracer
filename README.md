@@ -3,7 +3,8 @@
 **Trace-Based Adaptive Cost-Efficient Routing**
 
 [![PyPI](https://img.shields.io/pypi/v/tracer-llm)](https://pypi.org/project/tracer-llm/)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/tracer-llm/)
+[![Downloads](https://static.pepy.tech/badge/tracer-llm/month)](https://pepy.tech/project/tracer-llm)
+[![Python](https://img.shields.io/pypi/pyversions/tracer-llm)](https://pypi.org/project/tracer-llm/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/adrida/tracer/actions)
 [![Docs](https://img.shields.io/badge/docs-github-blue)](https://github.com/adrida/tracer/tree/main/docs)
