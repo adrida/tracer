@@ -38,13 +38,13 @@ A second binary classifier that predicts: "will the surrogate's prediction match
 
 ### Threshold calibration
 
-The acceptor threshold τ is calibrated on a held-out set (not used for training). The calibration objective: find the threshold that maximizes coverage subject to teacher agreement ≥ target. This is a conformal-style guarantee: on the calibration distribution, you get the promised agreement rate.
+The acceptor threshold τ is calibrated on a held-out set (not used for training). The calibration objective: find the threshold that maximizes coverage subject to teacher agreement ≥ target. This is a conformal-style guarantee: on the calibration distribution, you get the promised agreement rate. The approach follows the post-hoc deferral estimator framework of Narasimhan et al. ([ICML 2022](https://proceedings.mlr.press/v162/narasimhan22a.html)).
 
 ---
 
 ## Three pipeline families
 
-TRACER fits three candidate architectures and picks the one with highest coverage at your target teacher agreement.
+TRACER fits three candidate architectures and picks the one with highest coverage at your target teacher agreement. The L2D and RSB families are grounded in the Learn-to-Defer literature (Mozannar & Sontag, [ICML 2020](https://proceedings.mlr.press/v119/mozannar20b.html); Madras et al., [NeurIPS 2018](https://papers.nips.cc/paper_files/paper/2018/hash/09d37c08f7b129e96277388757530c72-Abstract.html); Mao et al., [NeurIPS 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/7e1bf09d2e4e6e5c5a0b63b66b47ef42-Abstract.html)).
 
 ### Global
 
@@ -136,7 +136,7 @@ Coverage grows monotonically as more traces accumulate. Easy intents (tight embe
 
 ## Qualitative audit
 
-Every fit produces a structured explanation of the routing policy:
+Every fit produces a structured explanation of the routing policy. The slice and boundary-pair design is informed by Slice Finder (Chung et al., [ICDE 2019](https://ieeexplore.ieee.org/document/8731353)) and the contrastive explanation literature (Miller, [AIJ 2019](https://www.sciencedirect.com/science/article/pii/S0004370217301126)).
 
 **Slice summaries**: per-label and per-length-bucket handled/deferred rates. Answers: "which parts of my label space are well-covered?"
 

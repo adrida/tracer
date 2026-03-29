@@ -79,6 +79,31 @@ The surrogate is **not another LLM** - it is a classical ML or shallow DL model 
 3. **Calibrate** - sweep the acceptor threshold to maximise coverage at your target parity (e.g. ≥ 95% teacher agreement)
 4. **Guard** - block deployment if the best candidate cannot clear the parity bar on held-out data
 
+## Explainability
+
+Every fit produces a structured audit report alongside the routing policy -- not just aggregate numbers.
+
+| Report component | What it answers |
+|-----------------|-----------------|
+| **Per-label slice stats** | Which intents are fully self-serve? Which always defer? |
+| **Contrastive boundary pairs** | For each label: one handled example, one deferred -- what makes an input "easy" vs "hard"? |
+| **Representative examples** | What does typical handled/deferred traffic look like? |
+| **Temporal deltas** | Which intents improved between the last refit and this one? |
+
+```python
+result = tracer.fit("traces.jsonl", embeddings=X)
+qr = result.qualitative_report
+
+print(qr.summary)
+# "Handled 9278/10003 (92.8%) by surrogate"
+
+for bp in qr.boundary_pairs[:3]:
+    print(f"{bp.teacher_label}: handled={bp.handled_preview!r} / deferred={bp.deferred_preview!r}")
+
+# Generate self-contained HTML report
+tracer.generate_html_report(".tracer")
+```
+
 ## Benchmark results (Banking77 - 77-class intent classification)
 
 | Metric | Value |
@@ -162,6 +187,18 @@ pip install tracer-llm[all]           # everything
 | [CLI reference](docs/cli.md) | `tracer fit`, `tracer serve`, `tracer demo`, and more |
 | [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
 | [AGENTS.md](AGENTS.md) | Integration guide for AI coding assistants |
+
+## Prior work
+
+TRACER builds on and connects three research threads:
+
+**Learn to Defer (L2D)** -- the algorithmic backbone. The surrogate + acceptor gate architecture is grounded in Mozannar & Sontag ([ICML 2020](https://proceedings.mlr.press/v119/mozannar20b.html)), Madras et al. ([NeurIPS 2018](https://papers.nips.cc/paper_files/paper/2018/hash/09d37c08f7b129e96277388757530c72-Abstract.html)), and Mao et al. ([NeurIPS 2023](https://proceedings.neurips.cc/paper_files/paper/2023/hash/7e1bf09d2e4e6e5c5a0b63b66b47ef42-Abstract.html)).
+
+**Post-hoc calibration** -- the threshold sweep that enforces the parity guarantee follows the post-hoc deferral estimator framework of Narasimhan et al. ([ICML 2022](https://proceedings.mlr.press/v162/narasimhan22a.html)).
+
+**LLM routing** -- the problem setting is shared with Hybrid LLM (Ding et al., [ICLR 2024](https://openreview.net/forum?id=02f3mUtqnM)) and RouteLLM (Ong et al., [ICLR 2025](https://openreview.net/forum?id=sSt9fROCn2)). TRACER's distinction: it targets classification specifically, uses the teacher's own trace distribution rather than preference data, and enforces a formal parity guarantee rather than a quality heuristic.
+
+**Interpretability** -- the qualitative audit design is informed by Slice Finder (Chung et al., [ICDE 2019](https://ieeexplore.ieee.org/document/8731353)) and the contrastive explanation literature (Miller, [AIJ 2019](https://www.sciencedirect.com/science/article/pii/S0004370217301126)).
 
 ## Paper
 
