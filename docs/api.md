@@ -35,6 +35,7 @@ result.manifest.embedding_dim            # int
 result.qualitative_report    # QualitativeReport | None
 result.notes                 # list[str], human-readable notes
 result.artifact_dir          # str
+result.get_sankey()          # generate Sankey diagram (requires tracer-llm[viz])
 ```
 
 **Example:**
@@ -374,6 +375,51 @@ print(f"Report at: {path}")
 
 import webbrowser
 webbrowser.open(f"file://{path}")
+```
+
+---
+
+## `tracer.generate_sankey()`
+
+Generate an interactive Sankey diagram of the routing flow.
+
+```python
+tracer.generate_sankey(
+    artifact_dir,
+    output_path=None,
+    fmt="html",
+    top_k=15,
+    title=None,
+) -> str
+```
+
+**Parameters:**
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `artifact_dir` | required | Path to `.tracer/` directory |
+| `output_path` | `<artifact_dir>/sankey.<fmt>` | Where to write the output |
+| `fmt` | `"html"` | `"html"` for interactive, `"png"`, `"svg"`, `"pdf"`, or `"jpeg"` for static |
+| `top_k` | `15` | Number of top labels to show individually (rest grouped as "other") |
+| `title` | auto-generated | Custom diagram title |
+
+**Returns:** `str` path to the generated file.
+
+**Requires:** `pip install tracer-llm[viz]`
+
+**Example:**
+
+```python
+path = tracer.generate_sankey(".tracer")
+tracer.generate_sankey(".tracer", fmt="png", output_path="routing.png")
+```
+
+Also available as a method on `FitResult`:
+
+```python
+result = tracer.fit("traces.jsonl", embeddings=X)
+result.get_sankey()                # interactive HTML
+result.get_sankey(fmt="png")       # static image
 ```
 
 ---

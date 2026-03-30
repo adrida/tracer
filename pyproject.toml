@@ -50,6 +50,7 @@ notebooks = [
     "datasets>=2.0",
     "huggingface_hub>=0.14",
 ]
+viz = ["plotly>=5.0", "kaleido>=0.2"]
 xgboost = ["xgboost>=1.7"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 all = [
@@ -58,6 +59,8 @@ all = [
     "numpy>=1.21,<2.1",
     "faiss-cpu>=1.7",
     "xgboost>=1.7",
+    "plotly>=5.0",
+    "kaleido>=0.2",
     "pandas>=1.4",
     "matplotlib>=3.5",
 ]

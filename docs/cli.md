@@ -13,6 +13,7 @@ tracer <command> [options]
 | `tracer update` | Refit with new traces (continual learning) |
 | `tracer report` | Print the policy manifest as JSON |
 | `tracer report-html` | Generate an HTML audit report and open it |
+| `tracer sankey` | Generate a Sankey routing flow diagram |
 | `tracer serve` | Start a prediction HTTP server |
 
 ---
@@ -205,6 +206,38 @@ tracer report-html my-policy
 - Representative handled and deferred examples
 
 The HTML is fully self-contained -- no external dependencies, works offline, can be shared as a single file.
+
+---
+
+## `tracer sankey`
+
+Generate an interactive Sankey diagram showing how traffic flows from labels to the surrogate or teacher.
+
+```bash
+tracer sankey [<artifact-dir>] [--output <path>] [--format <fmt>] [--top-k <n>] [--no-open]
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `artifact-dir` | `.tracer` | Artifact directory |
+| `--output` | `<artifact-dir>/sankey.<format>` | Output path |
+| `--format` | `html` | `html` (interactive), `png`, or `svg` |
+| `--top-k` | `15` | Number of top labels to show individually |
+| `--no-open` | off | Don't open browser automatically (html only) |
+
+**Examples:**
+
+```bash
+tracer sankey
+
+tracer sankey .tracer --format png --output routing-flow.png
+
+tracer sankey --top-k 20 --no-open
+```
+
+**Requires:** `pip install tracer-llm[viz]`
 
 ---
 

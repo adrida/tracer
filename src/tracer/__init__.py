@@ -6,6 +6,7 @@ replace teacher calls -- with formal guarantees and qualitative audit.
 
 from tracer.api import fit, report, load_router, update
 from tracer.analysis.html_report import generate_html_report
+from tracer.analysis.sankey import generate_sankey
 from tracer.runtime.serve import serve
 from tracer.embeddings.embedder import Embedder
 from tracer.config import FitConfig, EmbeddingConfig
@@ -31,6 +32,7 @@ __all__ = [
     "report",
     "embed",
     "generate_html_report",
+    "generate_sankey",
     "serve",
     "Embedder",
     # Config

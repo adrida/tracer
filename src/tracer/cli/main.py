@@ -68,6 +68,26 @@ def _cmd_report_html(args):
         webbrowser.open(f"file://{out}")
 
 
+def _cmd_sankey(args):
+    from tracer.analysis.sankey import generate_sankey
+    from tracer.cli._ui import success, info, step, _C
+    import webbrowser
+
+    c = _C()
+    with step("Generating Sankey diagram"):
+        out = generate_sankey(
+            args.artifact_dir,
+            output_path=args.output,
+            fmt=args.format,
+            top_k=args.top_k,
+        )
+
+    success(f"Sankey diagram saved  ->  {c.CYAN}{out}{c.RESET}")
+    if args.format == "html" and not args.no_open:
+        info("Opening in browser...")
+        webbrowser.open(f"file://{out}")
+
+
 def _cmd_serve(args):
     from tracer.runtime.serve import serve
     serve(artifact_dir=args.artifact_dir, host=args.host, port=args.port)
@@ -193,8 +213,8 @@ def _cmd_demo(args):
             first = next(iter(label_to_idx))
             return X[label_to_idx[first][0]], first
 
-        config = FitConfig(target_teacher_agreement=0.95,
-                           frontier_targets=(0.90, 0.95))
+        config = FitConfig(target_teacher_agreement=0.92,
+                           frontier_targets=(0.88, 0.92))
         model_zoo_desc = "logreg · rf · et"
         use_fast_zoo   = True
 
@@ -209,13 +229,13 @@ def _cmd_demo(args):
         rng = np.random.RandomState(42)
         intent_names = ["check_balance", "transfer_money", "card_blocked",
                         "loan_inquiry", "account_settings"]
-        centers    = rng.randn(N_CLS, DIM) * 4.0          # well separated
+        centers    = rng.randn(N_CLS, DIM) * 2.5
         labels_int = rng.randint(0, N_CLS, size=N)
-        X          = centers[labels_int] + rng.randn(N, DIM) * 0.8
+        X          = centers[labels_int] + rng.randn(N, DIM) * 1.2
         teacher_list = [intent_names[i] for i in labels_int]
         ground_truth = list(teacher_list)
         for i in range(N):
-            if rng.random() < 0.05:                        # 5% noise only
+            if rng.random() < 0.12:
                 teacher_list[i] = intent_names[rng.randint(0, N_CLS)]
 
         sample_texts = {
@@ -264,8 +284,8 @@ def _cmd_demo(args):
             idxs = label_to_idx.get(preferred_label, [0])
             return X[idxs[0]].astype(np.float32), preferred_label
 
-        config = FitConfig(target_teacher_agreement=0.90,
-                           frontier_targets=(0.85, 0.90))
+        config = FitConfig(target_teacher_agreement=0.95,
+                           frontier_targets=(0.90, 0.95))
         model_zoo_desc = "logreg · mlp · rf · et"
         use_fast_zoo   = False
 
@@ -495,6 +515,7 @@ def main():
               tracer fit traces.jsonl --target 0.95    95%% parity target
               tracer report .tracer                    Show policy manifest
               tracer report-html .tracer               Open HTML audit report
+              tracer sankey .tracer                    Generate Sankey routing diagram
               tracer update new.jsonl                  Refit with new traces
         """),
     )
@@ -520,6 +541,18 @@ def main():
     p_html.add_argument("--no-open", action="store_true",
                         help="Don't open browser automatically")
 
+    p_sankey = sub.add_parser("sankey",
+                              help="Generate a Sankey routing diagram (requires plotly)")
+    p_sankey.add_argument("artifact_dir", nargs="?", default=".tracer")
+    p_sankey.add_argument("--output", default=None,
+                          help="Output path (default: <artifact_dir>/sankey.<format>)")
+    p_sankey.add_argument("--format", default="html", choices=["html", "png", "svg"],
+                          help="Output format (default: html)")
+    p_sankey.add_argument("--top-k", type=int, default=15,
+                          help="Number of top labels to show (default: 15)")
+    p_sankey.add_argument("--no-open", action="store_true",
+                          help="Don't open browser automatically (html only)")
+
     p_serve = sub.add_parser("serve",
                               help="Start a prediction HTTP server")
     p_serve.add_argument("artifact_dir", nargs="?", default=".tracer",
@@ -538,6 +571,7 @@ def main():
         "fit":         _cmd_fit,
         "report":      _cmd_report,
         "report-html": _cmd_report_html,
+        "sankey":      _cmd_sankey,
         "serve":       _cmd_serve,
         "update":      _cmd_update,
         "demo":        _cmd_demo,

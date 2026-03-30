@@ -238,6 +238,7 @@ def generate_html_report(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TRACER - Audit Report</title>
 <style>{_CSS}</style>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
 <div class="page">
@@ -321,6 +322,24 @@ def generate_html_report(
         handled_ex  = qr.get("handled_examples", [])
         deferred_ex = qr.get("deferred_examples", [])
         deltas      = qr.get("temporal_deltas", [])
+
+        # ── Sankey routing diagram (top of content) ───────────────────────────
+        try:
+            from tracer.analysis.sankey import generate_sankey_div
+            sankey_div = generate_sankey_div(artifact_dir)
+            if sankey_div:
+                html += f"""
+<div class="section">
+  <h2>Routing Flow</h2>
+  <p style="font-size:.82rem;color:#8b949e;margin-bottom:12px">
+    Green flows are handled by the surrogate. Red flows are deferred to the teacher LLM.
+    Drag nodes to rearrange &middot; hover for exact counts.
+  </p>
+  {sankey_div}
+</div>
+"""
+        except Exception:
+            pass
 
         # ── Per-label coverage table (searchable) ─────────────────────────────
         html += f"""
@@ -444,4 +463,12 @@ def generate_html_report(
 </html>"""
 
     output_path.write_text(html, encoding="utf-8")
+
+    # Always generate the standalone sankey.html alongside the report
+    try:
+        from tracer.analysis.sankey import generate_sankey
+        generate_sankey(artifact_dir, output_path=artifact_dir / "sankey.html", fmt="html")
+    except Exception:
+        pass
+
     return str(output_path)

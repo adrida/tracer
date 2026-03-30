@@ -110,3 +110,22 @@ class FitResult:
     manifest: ArtifactManifest
     qualitative_report: Optional[QualitativeReport] = None
     notes: List[str] = field(default_factory=list)
+
+    def get_sankey(
+        self,
+        output_path: Optional[str] = None,
+        fmt: str = "html",
+        top_k: int = 15,
+        title: Optional[str] = None,
+    ) -> str:
+        """Generate a Sankey diagram of the routing flow.
+
+        Requires: pip install tracer-llm[viz]
+
+        Returns path to the generated file.
+        """
+        from tracer.analysis.sankey import generate_sankey
+        return generate_sankey(
+            self.artifact_dir, output_path=output_path,
+            fmt=fmt, top_k=top_k, title=title,
+        )
