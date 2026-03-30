@@ -71,7 +71,7 @@ User query → [Embedder] → [ML Surrogate] → [Acceptor Gate]
                                           (traditional ML)
 ```
 
-The surrogate is **not another LLM** - it is a classical ML or shallow DL model (the model zoo includes logistic regression, SGD, LightGBM, random forests, and small feed-forward nets). This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
+The surrogate is **not another LLM** - it is a classical ML or shallow DL model (the model zoo includes logistic regression, SGD, gradient-boosted trees, random forests, and small feed-forward nets). This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
 
 1. **Fit** - train a suite of candidate surrogates on your LLM's classification traces; select the best via cross-validated teacher agreement
 2. **Gate** - attach a learned acceptor that estimates, per-input, whether the surrogate will agree with the teacher
