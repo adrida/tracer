@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracer-llm"
-version = "0.1.0"
+version = "0.1.1"
 description = "TRACER: Trace-Based Adaptive Cost-Efficient Routing. Turn LLM traces into parity-gated routing policies - cut 90%+ of LLM calls with formal guarantees."
 readme = "README.md"
 license = {file = "LICENSE"}
