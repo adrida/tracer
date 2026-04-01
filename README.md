@@ -62,6 +62,25 @@ out = router.predict("Some edge case", fallback=lambda: call_my_llm(text))
 
 > **Want to go deeper?** The [concepts guide](docs/concepts.md) explains the full pipeline, model zoo, and parity gate. The [API reference](docs/api.md) covers every parameter. The [CLI reference](docs/cli.md) covers `tracer fit`, `tracer serve`, and more.
 
+## Using from JavaScript / Node.js
+
+TRACER works with JS pipelines without any Python in your application code. The pattern: log traces from JS → fit offline with the CLI → run `tracer serve` as a sidecar → call it via `fetch`.
+
+```js
+// 1. Log every LLM classification
+fs.appendFileSync('traces.jsonl', JSON.stringify({ input: text, teacher: label }) + '\n')
+
+// 2. At inference: embed → POST to TRACER → fallback to LLM only if deferred
+const { label, decision } = await fetch('http://localhost:8000/predict', {
+  method: 'POST',
+  body: JSON.stringify({ embedding }),  // same model you used at fit time
+}).then(r => r.json())
+
+if (decision === 'deferred') label = await callYourLLM(text)
+```
+
+See the [JavaScript integration guide](docs/javascript.md) for the full setup including embeddings, docker-compose, batch prediction, and continual learning.
+
 ## How it works
 
 ```
@@ -161,6 +180,7 @@ pip install tracer-llm[all]           # everything
 | [Concepts](docs/concepts.md) | Pipeline internals, model zoo, parity gate |
 | [API reference](docs/api.md) | Every function, parameter, and return type |
 | [CLI reference](docs/cli.md) | `tracer fit`, `tracer serve`, `tracer demo`, and more |
+| [JavaScript / Node.js](docs/javascript.md) | Full integration guide for JS pipelines |
 | [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
 | [AGENTS.md](AGENTS.md) | Integration guide for AI coding assistants |
 
