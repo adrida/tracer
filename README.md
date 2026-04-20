@@ -2,6 +2,8 @@
 
 **Trace-Based Adaptive Cost-Efficient Routing**
 
+[![arXiv](https://img.shields.io/badge/arXiv-2604.14531-b31b1b.svg)](https://arxiv.org/abs/2604.14531)
+[![Hugging Face](https://img.shields.io/badge/🤗%20HF-Papers-yellow)](https://huggingface.co/papers/2604.14531)
 [![PyPI](https://img.shields.io/pypi/v/tracer-llm)](https://pypi.org/project/tracer-llm/)
 [![Downloads](https://static.pepy.tech/badge/tracer-llm)](https://pepy.tech/project/tracer-llm)
 [![Downloads](https://static.pepy.tech/badge/tracer-llm/month)](https://pepy.tech/project/tracer-llm)
@@ -187,7 +189,19 @@ pip install tracer-llm[all]           # everything
 
 ## Paper
 
-A research paper detailing the approach, formal guarantees, ablation studies, limitations, and reproducible experiment tooling is in preparation. It will be linked here upon publication.
+**TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification**  
+Adam Rida — arXiv 2026
+
+[![arXiv](https://img.shields.io/badge/arXiv-2604.14531-b31b1b.svg)](https://arxiv.org/abs/2604.14531) [![Hugging Face](https://img.shields.io/badge/🤗%20HF-Papers-yellow)](https://huggingface.co/papers/2604.14531)
+
+```bibtex
+@article{rida2026tracer,
+  title   = {TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification},
+  author  = {Rida, Adam},
+  journal = {arXiv preprint arXiv:2604.14531},
+  year    = {2026}
+}
+```
 
 ## License
 
