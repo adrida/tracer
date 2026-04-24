@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import json
+import sys
+import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import joblib
 import numpy as np
@@ -89,9 +91,18 @@ def fit(
     targets = list(config.frontier_targets)
     if config.target_teacher_agreement not in targets:
         targets.append(config.target_teacher_agreement)
+
+    log_fn: Optional[Callable[[str], None]] = None
+    if config.verbose:
+        _t0 = time.perf_counter()
+        def log_fn(msg: str) -> None:  # noqa: E301 — local helper
+            elapsed = time.perf_counter() - _t0
+            print(f"[tracer.fit +{elapsed:6.1f}s] {msg}", file=sys.stderr, flush=True)
+
     frontier, split = fit_frontier(X, y_teacher, targets,
                                    max_fit_labels=config.max_fit_labels,
-                                   min_coverage=config.min_deploy_coverage)
+                                   min_coverage=config.min_deploy_coverage,
+                                   log=log_fn, skip=config.skip_candidates)
 
     # Select best pipeline at target TA
     selected = None

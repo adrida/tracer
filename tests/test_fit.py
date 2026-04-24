@@ -244,6 +244,101 @@ def test_demo_runs():
     _cmd_demo(argparse.Namespace())
 
 
+# ── Progress logging & candidate skipping ────────────────────────────────────
+
+def test_search_surrogate_invokes_on_candidate_callback():
+    """The sweep should invoke on_candidate once per candidate with a usable val_f1.
+
+    Supports both the legacy 2-arg signature (name, val_f1) and the preferred
+    3-arg signature (name, val_f1, elapsed_seconds).
+    """
+    from tracer.fit.surrogate import _candidates, search_best_surrogate
+    rng = np.random.RandomState(0)
+    X_tr = rng.randn(200, 16).astype(np.float32); y_tr = rng.randint(0, 3, size=200)
+    X_va = rng.randn(60,  16).astype(np.float32); y_va = rng.randint(0, 3, size=60)
+
+    calls_short, calls_full = [], []
+    def cb_short(name, f1):
+        calls_short.append((name, f1))
+    def cb_full(name, f1, elapsed):
+        calls_full.append((name, f1, elapsed))
+
+    expected = set(_candidates(len(X_tr), skip=("gbt", "xgb")).keys())
+
+    search_best_surrogate(X_tr, y_tr, X_va, y_va, on_candidate=cb_short, skip=("gbt", "xgb"))
+    search_best_surrogate(X_tr, y_tr, X_va, y_va, on_candidate=cb_full,  skip=("gbt", "xgb"))
+
+    assert {n for n, _ in calls_short}.issuperset(expected - {"sgd_log"}) or \
+           len(calls_short) >= len(expected) - 1  # sgd can fail on tiny data
+    assert all(0.0 <= f <= 1.0 for _, f in calls_short)
+    assert all(isinstance(el, float) and el >= 0 for _, _, el in calls_full)
+    # Elapsed timings in the extended callback should match the returned
+    # metrics[fit_seconds] value that now accompanies the best model.
+    _, _, metrics = search_best_surrogate(X_tr, y_tr, X_va, y_va, skip=("gbt", "xgb"))
+    assert "fit_seconds" in metrics and metrics["fit_seconds"] >= 0
+
+
+def test_search_surrogate_callback_exception_does_not_abort():
+    """A raising on_candidate must not derail the sweep — warn and keep going."""
+    from tracer.fit.surrogate import search_best_surrogate
+    rng = np.random.RandomState(0)
+    X_tr = rng.randn(200, 16).astype(np.float32); y_tr = rng.randint(0, 3, size=200)
+    X_va = rng.randn(60,  16).astype(np.float32); y_va = rng.randint(0, 3, size=60)
+
+    def cb_raises(name, f1):
+        raise RuntimeError("boom")
+
+    import warnings as _w
+    with _w.catch_warnings(record=True) as rec:
+        _w.simplefilter("always")
+        clf, name, _ = search_best_surrogate(X_tr, y_tr, X_va, y_va,
+                                             on_candidate=cb_raises, skip=("gbt", "xgb"))
+    assert clf is not None and name is not None
+    assert any("on_candidate callback raised" in str(w.message) for w in rec)
+
+
+def test_skip_candidates_removes_models():
+    """FitConfig.skip_candidates should remove the named models from _candidates()."""
+    from tracer.fit.surrogate import _candidates
+    full = set(_candidates(3000).keys())
+    skipped = set(_candidates(3000, skip=("gbt", "mlp_1h")).keys())
+    assert "mlp_1h" in full and "mlp_1h" not in skipped
+    if "gbt" in full:
+        assert "gbt" not in skipped
+
+
+def test_fit_verbose_emits_stderr_progress(capsys):
+    """FitConfig.verbose=True should print `[tracer.fit +...s] ...` to stderr."""
+    from tracer.api import fit
+    from tracer.config import FitConfig
+    with tempfile.TemporaryDirectory() as tmp:
+        path, _, _ = _make_traces(tmp, n=200, dim=16, n_classes=3)
+        fit(path, artifact_dir=Path(tmp) / ".tracer",
+            config=FitConfig(verbose=True,
+                             target_teacher_agreement=0.90,
+                             frontier_targets=(0.90,),
+                             skip_candidates=("gbt", "xgb")))
+    err = capsys.readouterr().err
+    assert "[tracer.fit" in err
+    assert "fit_frontier" in err
+    # At least one candidate heartbeat should have appeared.
+    assert any(tok in err for tok in ("logreg_c1", "mlp_1h", "rf", "et", "dt"))
+
+
+def test_fit_verbose_false_is_silent(capsys):
+    from tracer.api import fit
+    from tracer.config import FitConfig
+    with tempfile.TemporaryDirectory() as tmp:
+        path, _, _ = _make_traces(tmp, n=200, dim=16, n_classes=3)
+        fit(path, artifact_dir=Path(tmp) / ".tracer",
+            config=FitConfig(verbose=False,
+                             target_teacher_agreement=0.90,
+                             frontier_targets=(0.90,),
+                             skip_candidates=("gbt", "xgb")))
+    err = capsys.readouterr().err
+    assert "[tracer.fit" not in err
+
+
 # ── Exports ──────────────────────────────────────────────────────────────────
 
 def test_public_exports():
@@ -284,6 +379,9 @@ if __name__ == "__main__":
         test_qualitative_report,
         test_qualitative_report_boundary_pairs,
         test_report,
+        test_search_surrogate_invokes_on_candidate_callback,
+        test_search_surrogate_callback_exception_does_not_abort,
+        test_skip_candidates_removes_models,
         test_demo_runs,
         test_public_exports,
     ]

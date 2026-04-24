@@ -9,8 +9,9 @@ Optional dependency: xgboost (skipped silently if not installed).
 
 from __future__ import annotations
 
+import time
 import warnings
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Iterable, Optional, Tuple
 
 import numpy as np
 from sklearn.ensemble import (
@@ -30,8 +31,14 @@ warnings.filterwarnings("ignore")
 SEED = 42
 
 
-def _candidates(n_samples: int) -> dict:
-    """Return model factory dict.  Factories are callables → fitted-ready estimator."""
+def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
+    """Return model factory dict.  Factories are callables → fitted-ready estimator.
+
+    Pass ``skip=("name", ...)`` to exclude candidates from the sweep — useful
+    when one model is known to dominate wall-time on the target data (e.g.
+    ``skip=("gbt",)`` on large multi-class problems).
+    """
+    skip_set = set(skip)
 
     # ── linear / logistic ────────────────────────────────────────────────────
     linear = {
@@ -100,7 +107,28 @@ def _candidates(n_samples: int) -> dict:
     except Exception:
         pass
 
-    return {**linear, **neural, **trees}
+    merged = {**linear, **neural, **trees}
+    if skip_set:
+        merged = {k: v for k, v in merged.items() if k not in skip_set}
+    return merged
+
+
+def _invoke_on_candidate(cb, name: str, val_f1: float, elapsed: float) -> None:
+    """Call ``cb(name, val_f1[, elapsed])`` tolerating either signature.
+
+    Older callers expected ``(name, val_f1)`` and we do not want to break
+    them. Newer code can accept the optional elapsed seconds. A raising
+    callback is swallowed (with a warning) so it can't derail a fit.
+    """
+    if cb is None:
+        return
+    try:
+        try:
+            cb(name, val_f1, elapsed)
+        except TypeError:
+            cb(name, val_f1)
+    except Exception as e:  # pragma: no cover — defensive
+        warnings.warn(f"on_candidate callback raised: {e!r}", RuntimeWarning)
 
 
 def search_best_surrogate(
@@ -108,7 +136,8 @@ def search_best_surrogate(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
-    on_candidate: Optional[Callable[[str, float], None]] = None,
+    on_candidate: Optional[Callable[..., None]] = None,
+    skip: Iterable[str] = (),
 ) -> Tuple[Any, str, dict]:
     """Train all candidates and return (best_clf, model_name, metrics).
 
@@ -116,16 +145,25 @@ def search_best_surrogate(
     ----------
     X_train, y_train : training split
     X_val, y_val     : validation split (used for model selection only)
-    on_candidate     : optional callback(name, val_f1) called after each model
+    on_candidate     : optional callback invoked once per candidate after the
+                       fit+predict completes. Accepts either
+                       ``cb(name, val_f1)`` (legacy) or
+                       ``cb(name, val_f1, elapsed_seconds)`` (preferred).
+                       Exceptions raised by the callback are warned and
+                       swallowed — they do not abort the sweep.
+    skip             : candidate names to omit from the sweep (forwarded to
+                       ``_candidates``). Useful for pruning models that
+                       dominate wall-time, e.g. ``skip=("gbt",)``.
     """
     n = len(X_train)
-    candidates = _candidates(n)
+    candidates = _candidates(n, skip=skip)
 
     best_clf     = None
     best_name    = None
     best_metrics = None
 
     for name, factory in candidates.items():
+        t0 = time.perf_counter()
         clf = factory()
         try:
             clf.fit(X_train, y_train)
@@ -141,11 +179,11 @@ def search_best_surrogate(
 
         val_f1 = float(f1_score(y_val, preds, average="macro", zero_division=0))
         val_acc = float(accuracy_score(y_val, preds))
+        elapsed = time.perf_counter() - t0
 
-        metrics = {"teacher_f1": val_f1, "teacher_acc": val_acc}
+        metrics = {"teacher_f1": val_f1, "teacher_acc": val_acc, "fit_seconds": elapsed}
 
-        if on_candidate is not None:
-            on_candidate(name, val_f1)
+        _invoke_on_candidate(on_candidate, name, val_f1, elapsed)
 
         if best_clf is None or val_f1 > best_metrics["teacher_f1"]:
             best_clf     = clf

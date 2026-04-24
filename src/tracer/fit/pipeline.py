@@ -7,7 +7,8 @@ Threshold calibration: sweep all unique scores, pick max coverage >= target TA.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -16,6 +17,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from tracer.fit.surrogate import search_best_surrogate
+
+
+LogFn = Callable[[str], None]
+
+
+def _noop_log(_msg: str) -> None:
+    pass
 
 
 def _split_buffer(X: np.ndarray, y: np.ndarray, seed: int = 42):
@@ -121,13 +129,19 @@ def _predict(clf, X):
     return preds, probs
 
 
-def build_global(split, target_ta):
+def build_global(split, target_ta, log: Optional[LogFn] = None,
+                 skip: Iterable[str] = ()):
     """Global pipeline: one surrogate, accept all if TA >= target."""
+    log = log or _noop_log
     if len(np.unique(split["y_train"])) < 2 or len(split["X_val"]) == 0:
         return {"method": "global", "stages": [], "summary": {"status": "insufficient_data", "coverage_cal_total": 0.0}}
 
+    t0 = time.perf_counter()
+    log(f"  build_global: surrogate sweep on {len(split['X_train'])} train / {len(split['X_val'])} val")
     clf, name, val_m = search_best_surrogate(
-        split["X_train"], split["y_train"], split["X_val"], split["y_val"])
+        split["X_train"], split["y_train"], split["X_val"], split["y_val"],
+        on_candidate=_candidate_log(log), skip=skip)
+    log(f"  build_global: surrogate done in {time.perf_counter()-t0:.1f}s  best={name} f1={val_m['teacher_f1']:.3f}")
     preds_cal = clf.predict(split["X_cal"])
     ta_cal = float((preds_cal == split["y_cal"]).mean()) if len(preds_cal) else 0.0
     if ta_cal < target_ta:
@@ -146,10 +160,26 @@ def build_global(split, target_ta):
         "val_teacher_f1": val_m["teacher_f1"], "n_train_labels": split["n_fit"]}}
 
 
-def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, stage_name):
+def _candidate_log(log: LogFn) -> Callable[..., None]:
+    """Adapter: turn a per-candidate callback into a log line."""
+    def _cb(name: str, val_f1: float, elapsed: Optional[float] = None) -> None:
+        if elapsed is None:
+            log(f"    [{name:<12}]  f1={val_f1:.3f}")
+        else:
+            log(f"    [{elapsed:>5.1f}s]  {name:<12}  f1={val_f1:.3f}")
+    return _cb
+
+
+def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, stage_name,
+                           log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+    log = log or _noop_log
     if len(np.unique(y_tr)) < 2 or len(X_val) == 0 or len(X_cal) == 0:
         return None
-    clf, name, val_m = search_best_surrogate(X_tr, y_tr, X_val, y_val)
+    t0 = time.perf_counter()
+    log(f"  {stage_name}: surrogate sweep on {len(X_tr)} train / {len(X_val)} val")
+    clf, name, val_m = search_best_surrogate(
+        X_tr, y_tr, X_val, y_val, on_candidate=_candidate_log(log), skip=skip)
+    log(f"  {stage_name}: surrogate done in {time.perf_counter()-t0:.1f}s  best={name} f1={val_m['teacher_f1']:.3f}")
     preds_val, probs_val = _predict(clf, X_val)
     preds_cal, probs_cal = _predict(clf, X_cal)
     acceptor = _fit_acceptor(probs_val, preds_val, y_val)
@@ -166,11 +196,15 @@ def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, st
             "val_teacher_acc": val_m["teacher_acc"]}
 
 
-def build_l2d(split, target_ta):
+def build_l2d(split, target_ta, log: Optional[LogFn] = None,
+              skip: Iterable[str] = ()):
     """L2D: surrogate + acceptor-gated deferral."""
+    log = log or _noop_log
+    log(f"build_l2d: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
-        split["X_cal"], split["y_cal"], target_ta, "stage_1")
+        split["X_cal"], split["y_cal"], target_ta, "stage_1",
+        log=log, skip=skip)
     if s1 is None:
         return {"method": "l2d", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -183,11 +217,15 @@ def build_l2d(split, target_ta):
     return {"method": "l2d", "stages": stages, "summary": summary}
 
 
-def build_rsb(split, target_ta):
+def build_rsb(split, target_ta, log: Optional[LogFn] = None,
+              skip: Iterable[str] = ()):
     """RSB: residual two-stage cascade."""
+    log = log or _noop_log
+    log(f"build_rsb: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
-        split["X_cal"], split["y_cal"], target_ta, "stage_1")
+        split["X_cal"], split["y_cal"], target_ta, "stage_1",
+        log=log, skip=skip)
     if s1 is None:
         return {"method": "rsb", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -203,7 +241,8 @@ def build_rsb(split, target_ta):
             split["X_train"][rej_tr], split["y_train"][rej_tr],
             split["X_val"][rej_val], split["y_val"][rej_val],
             split["X_cal"][rej_cal], split["y_cal"][rej_cal],
-            target_ta, "stage_2")
+            target_ta, "stage_2",
+            log=log, skip=skip)
         if s2 is not None:
             stages.append(s2)
 
@@ -281,17 +320,24 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
             "teacher_agreement_cal_total": ta}
 
 
-def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05):
+def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
+                 log: Optional[LogFn] = None, skip: Iterable[str] = ()):
     """Build global/l2d/rsb for each target TA, return best per target."""
+    log = log or _noop_log
+    log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
+        f"max_fit_labels={max_fit_labels}"
+        + (f" skip={tuple(skip)}" if tuple(skip) else ""))
     X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels)
     split = _split_buffer(X_fit, y_fit)
+    log(f"fit_frontier: split -> {len(split['X_train'])} train / "
+        f"{len(split['X_val'])} val / {len(split['X_cal'])} cal")
     builders = {"global": build_global, "l2d": build_l2d, "rsb": build_rsb}
     frontier = []
 
     for target in sorted(set(float(t) for t in targets)):
         candidates = []
         for method_name, builder in builders.items():
-            pipeline = builder(split, target)
+            pipeline = builder(split, target, log=log, skip=skip)
             pipeline["summary"]["method"] = method_name
             if pipeline["summary"].get("coverage_cal_total", 0.0) < min_coverage:
                 if pipeline["summary"].get("status") == "ok":

@@ -298,7 +298,7 @@ def _cmd_demo(args):
 
     if use_fast_zoo:
         # Banking77: logreg + trees (fast on high-dim), skip MLP (slow)
-        def _demo_candidates(n_samples: int) -> dict:
+        def _demo_candidates(n_samples: int, skip=()) -> dict:
             from sklearn.linear_model import LogisticRegression
             from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
             from sklearn.pipeline import Pipeline
@@ -318,7 +318,7 @@ def _cmd_demo(args):
             }
     else:
         # Synthetic: add tree models
-        def _demo_candidates(n_samples: int) -> dict:
+        def _demo_candidates(n_samples: int, skip=()) -> dict:
             from sklearn.linear_model import LogisticRegression
             from sklearn.neural_network import MLPClassifier
             from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
@@ -343,10 +343,13 @@ def _cmd_demo(args):
 
     _orig_search = _p_mod.search_best_surrogate
 
-    def _patched_search(X_tr, y_tr, X_val, y_val, on_candidate=None):
+    def _patched_search(X_tr, y_tr, X_val, y_val, on_candidate=None, **kwargs):
+        # Accept **kwargs so future args (e.g. `skip=`) flow through without
+        # needing a matching signature update here.
         return _orig_search(X_tr, y_tr, X_val, y_val,
                             on_candidate=on_candidate or (
-                                lambda n, f: surrogate_log.append((n, f))))
+                                lambda n, f: surrogate_log.append((n, f))),
+                            **kwargs)
 
     _s_mod._candidates = _demo_candidates
     _p_mod.search_best_surrogate = _patched_search
