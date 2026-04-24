@@ -26,3 +26,12 @@ class FitConfig:
     min_labels_to_start: int = 100
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     seed: int = 42
+    # Emit per-candidate + per-stage progress to stderr during fit. Disable
+    # for quiet notebook / CI runs.
+    verbose: bool = True
+    # Candidate surrogate model names to skip during the sweep (e.g. ("gbt",)
+    # on large multi-class datasets where sklearn's GradientBoosting dominates
+    # wall-time — we have seen 1000× slowdowns vs the next slowest candidate
+    # on ~3k × 22-class embedding inputs). See `tracer.fit.surrogate._candidates`
+    # for the full set of names.
+    skip_candidates: Tuple[str, ...] = ()
