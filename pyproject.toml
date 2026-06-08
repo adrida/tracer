@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracer-llm"
-version = "0.1.3"
+dynamic = ["version"]
 description = "TRACER: Trace-Based Adaptive Cost-Efficient Routing. Turn LLM traces into parity-gated routing policies - cut 90%+ of LLM calls with formal guarantees."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -73,6 +73,9 @@ Documentation = "https://github.com/adrida/tracer#readme"
 
 [project.scripts]
 tracer = "tracer.cli.main:main"
+
+[tool.hatch.version]
+path = "src/tracer/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tracer"]
