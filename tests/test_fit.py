@@ -362,6 +362,55 @@ def test_public_exports():
     assert hasattr(tracer, "RepresentativeExample")
 
 
+# ── Config validation ───────────────────────────────────────────────────────
+
+def test_fitconfig_rejects_out_of_range_ta():
+    """target_teacher_agreement must be in (0, 1]."""
+    from tracer.config import FitConfig
+    with pytest.raises(ValueError):
+        FitConfig(target_teacher_agreement=1.5)
+    with pytest.raises(ValueError):
+        FitConfig(target_teacher_agreement=-0.2)
+    with pytest.raises(ValueError):
+        FitConfig(target_teacher_agreement=0.0)
+
+
+def test_fitconfig_rejects_empty_frontier_targets():
+    """frontier_targets must be non-empty and within (0, 1]."""
+    from tracer.config import FitConfig
+    with pytest.raises(ValueError):
+        FitConfig(frontier_targets=())
+    with pytest.raises(ValueError):
+        FitConfig(frontier_targets=(0.9, 1.2))
+
+
+def test_fitconfig_rejects_bad_scalars():
+    """min_deploy_coverage, max_fit_labels, explore_rate, retrain_every are guarded."""
+    from tracer.config import FitConfig
+    with pytest.raises(ValueError):
+        FitConfig(min_deploy_coverage=1.5)
+    with pytest.raises(ValueError):
+        FitConfig(max_fit_labels=0)
+    with pytest.raises(ValueError):
+        FitConfig(explore_rate=2.0)
+    with pytest.raises(ValueError):
+        FitConfig(retrain_every=0)
+
+
+def test_fitconfig_accepts_valid_config():
+    """Default config and a typical override construct without error."""
+    from tracer.config import FitConfig
+    FitConfig()
+    FitConfig(target_teacher_agreement=0.95)
+
+
+def test_embeddingconfig_rejects_nonpositive_batch_size():
+    from tracer.config import EmbeddingConfig
+    with pytest.raises(ValueError):
+        EmbeddingConfig(batch_size=0)
+    EmbeddingConfig(batch_size=64)
+
+
 if __name__ == "__main__":
     import traceback
     tests = [
@@ -384,6 +433,11 @@ if __name__ == "__main__":
         test_skip_candidates_removes_models,
         test_demo_runs,
         test_public_exports,
+        test_fitconfig_rejects_out_of_range_ta,
+        test_fitconfig_rejects_empty_frontier_targets,
+        test_fitconfig_rejects_bad_scalars,
+        test_fitconfig_accepts_valid_config,
+        test_embeddingconfig_rejects_nonpositive_batch_size,
     ]
     for t in tests:
         try:
