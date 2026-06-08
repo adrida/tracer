@@ -194,6 +194,30 @@ def test_update():
         assert updated.manifest.n_traces == 300  # 200 + 100
 
 
+def test_update_missing_all_traces_raises_clear_error():
+    """If all_traces.jsonl is gone, update() should fail fast with a clear
+    message rather than a cryptic trace/embedding mismatch."""
+    from tracer.api import fit, update
+    with tempfile.TemporaryDirectory() as tmp:
+        path, X, _ = _make_traces(tmp, n=200)
+        artifact_dir = Path(tmp) / ".tracer"
+        fit(path, artifact_dir=artifact_dir)
+
+        # Simulate a user deleting the file AGENTS.md warns against removing.
+        (artifact_dir / "all_traces.jsonl").unlink()
+
+        new_path = Path(tmp) / "new_traces.jsonl"
+        rng = np.random.RandomState(99)
+        X_new = rng.randn(50, 32).astype(np.float32)
+        with new_path.open("w") as f:
+            for i in range(50):
+                f.write(json.dumps({"input": f"new {i}", "teacher": f"cls_{i % 4}"}) + "\n")
+        np.save(new_path.with_suffix(".npy"), X_new)
+
+        with pytest.raises(FileNotFoundError, match="all_traces.jsonl"):
+            update(new_path, artifact_dir=artifact_dir)
+
+
 # ── Qualitative report ────────────────────────────────────────────────────────
 
 def test_qualitative_report():
@@ -376,6 +400,7 @@ if __name__ == "__main__":
         test_fit_missing_embeddings_raises,
         test_router_wrong_dim_raises,
         test_update,
+        test_update_missing_all_traces_raises_clear_error,
         test_qualitative_report,
         test_qualitative_report_boundary_pairs,
         test_report,

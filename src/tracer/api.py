@@ -232,17 +232,23 @@ def update(
     existing_index = EmbeddingIndex.load(artifact_dir / "index")
     X_combined = np.vstack([existing_index.embeddings, new_embeddings.astype(np.float32)])
 
-    # Load existing traces (we need to re-save combined)
+    # Load existing traces so we can re-save the combined set. fit() always
+    # writes all_traces.jsonl, so it should be present. If it is missing (e.g.
+    # it was deleted), the original records cannot be recovered from the index
+    # embeddings alone, and appending only the new records would leave the trace
+    # set out of sync with X_combined. Fail fast with an actionable message
+    # instead of surfacing a cryptic trace/embedding mismatch from fit().
     existing_traces_path = artifact_dir / "all_traces.jsonl"
-    if existing_traces_path.exists():
-        from tracer.traces.loader import load_traces as _lt
-        existing_ds = _lt(existing_traces_path)
-        combined_records = existing_ds.records + new_ds.records
-    else:
-        # First update: reconstruct original traces from the initial fit
-        # by loading them from the original trace source if we can find it,
-        # or infer count from existing embeddings
-        combined_records = new_ds.records
+    if not existing_traces_path.exists():
+        raise FileNotFoundError(
+            f"{existing_traces_path} not found — cannot continue continual "
+            "learning. fit() writes this file; if it was removed, re-run "
+            "tracer.fit() on your full trace set to rebuild it before calling "
+            "update().")
+
+    from tracer.traces.loader import load_traces as _lt
+    existing_ds = _lt(existing_traces_path)
+    combined_records = existing_ds.records + new_ds.records
 
     from tracer.types import TraceDataset
     from tracer.traces.loader import save_traces
