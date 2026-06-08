@@ -14,6 +14,10 @@ class EmbeddingConfig:
     batch_size: int = 128
     normalize: bool = True
 
+    def __post_init__(self) -> None:
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be > 0, got {self.batch_size}")
+
 
 @dataclass
 class FitConfig:
@@ -35,3 +39,28 @@ class FitConfig:
     # on ~3k × 22-class embedding inputs). See `tracer.fit.surrogate._candidates`
     # for the full set of names.
     skip_candidates: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.target_teacher_agreement <= 1.0:
+            raise ValueError(
+                "target_teacher_agreement must be in (0, 1], got "
+                f"{self.target_teacher_agreement}")
+        if not self.frontier_targets:
+            raise ValueError("frontier_targets must not be empty")
+        for t in self.frontier_targets:
+            if not 0.0 < t <= 1.0:
+                raise ValueError(
+                    f"frontier_targets values must be in (0, 1], got {t}")
+        if not 0.0 <= self.min_deploy_coverage <= 1.0:
+            raise ValueError(
+                "min_deploy_coverage must be in [0, 1], got "
+                f"{self.min_deploy_coverage}")
+        if self.max_fit_labels <= 0:
+            raise ValueError(f"max_fit_labels must be > 0, got {self.max_fit_labels}")
+        if not 0.0 <= self.explore_rate <= 1.0:
+            raise ValueError(f"explore_rate must be in [0, 1], got {self.explore_rate}")
+        if self.retrain_every <= 0:
+            raise ValueError(f"retrain_every must be > 0, got {self.retrain_every}")
+        if self.min_labels_to_start < 0:
+            raise ValueError(
+                f"min_labels_to_start must be >= 0, got {self.min_labels_to_start}")
