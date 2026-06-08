@@ -27,6 +27,7 @@ Embedder.from_callable(fn)
 - docs/cli.md - CLI reference
 - docs/concepts.md - how it works
 - docs/artifacts.md - .tracer/ directory schema
+- docs/troubleshooting.md - common errors and fixes
 
 ## Paper
 Research paper in preparation -- covers formal guarantees, ablation studies, and reproducible experiments.
