@@ -172,6 +172,19 @@ def test_router_wrong_dim_raises():
             router.predict(wrong_emb)
 
 
+def test_router_wrong_dim_batch_raises():
+    from tracer.api import fit, load_router
+    with tempfile.TemporaryDirectory() as tmp:
+        path, X, _ = _make_traces(tmp)
+        result = fit(path, artifact_dir=Path(tmp) / ".tracer")
+        if result.manifest.selected_method is None:
+            pytest.skip("No deployable pipeline at this target")
+        router = load_router(Path(tmp) / ".tracer")
+        wrong_emb = np.random.randn(5, 64).astype(np.float32)  # 64 != 32
+        with pytest.raises(ValueError, match="dimension mismatch"):
+            router.predict_batch(wrong_emb)
+
+
 # ── Continual learning ────────────────────────────────────────────────────────
 
 def test_update():
@@ -375,6 +388,7 @@ if __name__ == "__main__":
         test_fit_embedding_mismatch_raises,
         test_fit_missing_embeddings_raises,
         test_router_wrong_dim_raises,
+        test_router_wrong_dim_batch_raises,
         test_update,
         test_qualitative_report,
         test_qualitative_report_boundary_pairs,

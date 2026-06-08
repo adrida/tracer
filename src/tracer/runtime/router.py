@@ -141,6 +141,12 @@ class Router:
         """
         from tracer.fit.pipeline import route_pipeline
         X = self._to_embeddings(inputs)
+        expected_dim = self.manifest.embedding_dim
+        if expected_dim is not None and X.shape[-1] != expected_dim:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {expected_dim}, "
+                f"got {X.shape[-1]}."
+            )
         preds, handled, stage_id = route_pipeline(self._stages, X)
         labels = []
         decisions = []
