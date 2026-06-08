@@ -185,6 +185,7 @@ pip install tracer-llm[all]           # everything
 | [CLI reference](docs/cli.md) | `tracer fit`, `tracer serve`, `tracer demo`, and more |
 | [JavaScript / Node.js](docs/javascript.md) | Full integration guide for JS pipelines |
 | [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
+| [Troubleshooting](docs/troubleshooting.md) | `selected_method=null`, coverage drift, embedding-dim mismatch |
 | [AGENTS.md](AGENTS.md) | Integration guide for AI coding assistants |
 
 ## Paper
