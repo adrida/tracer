@@ -422,16 +422,12 @@ def test_fitconfig_rejects_empty_frontier_targets():
 
 
 def test_fitconfig_rejects_bad_scalars():
-    """min_deploy_coverage, max_fit_labels, explore_rate, retrain_every are guarded."""
+    """min_deploy_coverage and max_fit_labels are guarded."""
     from tracer.config import FitConfig
     with pytest.raises(ValueError):
         FitConfig(min_deploy_coverage=1.5)
     with pytest.raises(ValueError):
         FitConfig(max_fit_labels=0)
-    with pytest.raises(ValueError):
-        FitConfig(explore_rate=2.0)
-    with pytest.raises(ValueError):
-        FitConfig(retrain_every=0)
 
 
 def test_fitconfig_accepts_valid_config():

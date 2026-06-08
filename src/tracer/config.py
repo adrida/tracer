@@ -25,9 +25,6 @@ class FitConfig:
     frontier_targets: Tuple[float, ...] = (0.85, 0.90, 0.95)
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
-    explore_rate: float = 0.05
-    retrain_every: int = 100
-    min_labels_to_start: int = 100
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     seed: int = 42
     # Emit per-candidate + per-stage progress to stderr during fit. Disable
@@ -57,10 +54,3 @@ class FitConfig:
                 f"{self.min_deploy_coverage}")
         if self.max_fit_labels <= 0:
             raise ValueError(f"max_fit_labels must be > 0, got {self.max_fit_labels}")
-        if not 0.0 <= self.explore_rate <= 1.0:
-            raise ValueError(f"explore_rate must be in [0, 1], got {self.explore_rate}")
-        if self.retrain_every <= 0:
-            raise ValueError(f"retrain_every must be > 0, got {self.retrain_every}")
-        if self.min_labels_to_start < 0:
-            raise ValueError(
-                f"min_labels_to_start must be >= 0, got {self.min_labels_to_start}")

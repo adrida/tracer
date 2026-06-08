@@ -169,7 +169,6 @@ def fit(
         "frontier_targets": list(config.frontier_targets),
         "min_deploy_coverage": config.min_deploy_coverage,
         "max_fit_labels": config.max_fit_labels,
-        "explore_rate": config.explore_rate,
         "seed": config.seed,
     }, indent=2), encoding="utf-8")
 

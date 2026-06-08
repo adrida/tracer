@@ -435,9 +435,6 @@ class FitConfig:
     frontier_targets: tuple = (0.85, 0.90, 0.95)
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
-    explore_rate: float = 0.05
-    retrain_every: int = 100
-    min_labels_to_start: int = 100
     seed: int = 42
 ```
 
