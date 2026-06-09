@@ -102,6 +102,7 @@ def fit(
     frontier, split = fit_frontier(X, y_teacher, targets,
                                    max_fit_labels=config.max_fit_labels,
                                    min_coverage=config.min_deploy_coverage,
+                                   parity_alpha=config.parity_alpha,
                                    log=log_fn, skip=config.skip_candidates)
 
     # Select best pipeline at target TA
@@ -169,6 +170,7 @@ def fit(
         "frontier_targets": list(config.frontier_targets),
         "min_deploy_coverage": config.min_deploy_coverage,
         "max_fit_labels": config.max_fit_labels,
+        "parity_alpha": config.parity_alpha,
         "seed": config.seed,
     }, indent=2), encoding="utf-8")
 
