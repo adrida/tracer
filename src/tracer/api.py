@@ -229,6 +229,12 @@ def update(
 
     # Load existing embeddings
     existing_index = EmbeddingIndex.load(artifact_dir / "index")
+    if new_embeddings.shape[-1] != existing_index.embeddings.shape[-1]:
+        raise ValueError(
+            f"Embedding dimension mismatch: existing index has "
+            f"{existing_index.embeddings.shape[-1]} dims, but new traces have "
+            f"{new_embeddings.shape[-1]} dims.")
+
     X_combined = np.vstack([existing_index.embeddings, new_embeddings.astype(np.float32)])
 
     # Load existing traces so we can re-save the combined set. fit() always

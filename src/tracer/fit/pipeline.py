@@ -38,7 +38,8 @@ def _split_buffer(X: np.ndarray, y: np.ndarray, seed: int = 42):
         if n == 1:
             train_idx.extend(ci.tolist()); continue
         if n == 2:
-            train_idx.append(int(ci[0])); cal_idx.append(int(ci[1])); continue
+            # 1 train, 1 val (better than 1 train, 1 cal, as sweep needs val)
+            train_idx.append(int(ci[0])); val_idx.append(int(ci[1])); continue
         if n == 3:
             train_idx.append(int(ci[0])); val_idx.append(int(ci[1]))
             cal_idx.append(int(ci[2])); continue
