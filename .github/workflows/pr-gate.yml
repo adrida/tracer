@@ -1,0 +1,52 @@
+# Temporary PR gate (Adam, 2026-06-09): outside pull requests are paused while
+# we work through a backlog. Only the allowlisted contributors can open PRs;
+# everyone else is asked to open an issue instead and the PR is closed. Issues
+# stay fully open. This workflow auto-disables itself after EXPIRY, so the
+# restriction lifts on its own with no further action.
+#
+# Uses pull_request_target so it has a token that can comment/close on PRs from
+# forks. It never checks out or runs PR code, so this is safe.
+name: PR gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const EXPIRY = '2026-06-16';            // restriction lifts after this date (UTC)
+            const ALLOW = ['ilanoh', 'adrida'];     // may open PRs while gated
+            const today = new Date().toISOString().slice(0, 10);
+            if (today > EXPIRY) {
+              core.info(`PR gate expired (${EXPIRY}); allowing all PRs.`);
+              return;
+            }
+            const author = context.payload.pull_request.user.login;
+            if (ALLOW.includes(author)) {
+              core.info(`${author} is allowlisted; PR allowed.`);
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: number,
+              body: [
+                `Thanks for wanting to contribute, @${author}.`,
+                ``,
+                `We're pausing outside pull requests for about a week while we work through a backlog.`,
+                `Please open an **issue** describing the change and we'll pick it up there.`,
+                ``,
+                `Pull requests reopen to everyone after ${EXPIRY}.`,
+              ].join('\n'),
+            });
+            await github.rest.pulls.update({ owner, repo, pull_number: number, state: 'closed' });
+            core.info(`Closed PR #${number} from non-allowlisted author ${author}.`);
