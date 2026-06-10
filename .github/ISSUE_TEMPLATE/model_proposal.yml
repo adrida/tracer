@@ -1,6 +1,6 @@
 name: Surrogate model proposal
 description: Propose adding a new surrogate model to the zoo. Benchmark required.
-labels: ["model-proposal", "needs-benchmark"]
+labels: ["model-proposal", "needs-benchmark", "needs-triage"]
 body:
   - type: markdown
     attributes:

@@ -1,0 +1,3 @@
+# Default reviewer for everything. GitHub will auto-request a review
+# from @adrida on every pull request.
+* @adrida

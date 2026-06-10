@@ -1,6 +1,6 @@
 name: Bug report
 description: Something behaves incorrectly, with a reproduction.
-labels: ["bug"]
+labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:

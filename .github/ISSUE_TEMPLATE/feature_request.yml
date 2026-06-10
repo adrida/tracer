@@ -1,6 +1,6 @@
 name: Feature request
 description: Propose a feature or behavior change (not a model addition).
-labels: ["enhancement"]
+labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:
