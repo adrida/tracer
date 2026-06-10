@@ -1,0 +1,266 @@
+Generating synthetic data (500 samples, 5 intents, 384-dim)...
+
+Fitting sentence-transformers ...
+modules.json: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 349/349 [00:00<00:00, 1.47MB/s]
+config_sentence_transformers.json: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████| 116/116 [00:00<00:00, 807kB/s]
+README.md: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10.5k/10.5k [00:00<00:00, 23.7MB/s]
+sentence_bert_config.json: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 53.0/53.0 [00:00<00:00, 228kB/s]
+config.json: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 612/612 [00:00<00:00, 4.72MB/s]
+model.safetensors: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 90.9M/90.9M [03:33<0model.safetensors: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 90.9M/90.9M [03:33<00:00, 426kB/s]
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 1010.64it/s]
+tokenizer_config.json: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 350/350 [00:00<00:00, 1.74MB/s]
+vocab.txt: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 232k/232k [00:00<00:00, 18.9MB/s]
+tokenizer.json: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████| 466k/466k [00:00<00:00, 26.4MB/s]
+special_tokens_map.json: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████| 112/112 [00:00<00:00, 827kB/s]
+config.json: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████| 190/190 [00:00<00:00, 1.12MB/s]
+[tracer.fit +   0.0s] fit_frontier: X=(500, 384) targets=[0.85, 0.9, 0.95] max_fit_labels=8000
+[tracer.fit +   0.0s] fit_frontier: split -> 300 train / 100 val / 100 cal
+[tracer.fit +   0.0s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit +   0.4s]     [  0.4s]  logreg_c1     f1=0.859
+[tracer.fit +   0.7s]     [  0.4s]  logreg_c10    f1=0.830
+[tracer.fit +   0.8s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit +   0.9s]     [  0.1s]  mlp_1h        f1=0.859
+[tracer.fit +   1.1s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +   1.1s]     [  0.1s]  dt            f1=0.747
+[tracer.fit +   1.8s]     [  0.7s]  rf            f1=0.878
+[tracer.fit +   2.3s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  16.7s]     [ 14.3s]  gbt           f1=0.857
+[tracer.fit +  16.7s]   build_global: surrogate done in 16.7s  best=mlp_2h f1=0.878
+[tracer.fit +  16.7s] build_l2d: target_TA=0.85
+[tracer.fit +  16.7s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  17.3s]     [  0.7s]  logreg_c1     f1=0.859
+[tracer.fit +  17.7s]     [  0.4s]  logreg_c10    f1=0.830
+[tracer.fit +  17.8s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit +  18.0s]     [  0.2s]  mlp_1h        f1=0.859
+[tracer.fit +  18.1s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +  18.1s]     [  0.0s]  dt            f1=0.747
+[tracer.fit +  18.8s]     [  0.6s]  rf            f1=0.878
+[tracer.fit +  19.3s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  33.2s]     [ 14.0s]  gbt           f1=0.857
+[tracer.fit +  33.2s]   stage_1: surrogate done in 16.6s  best=mlp_2h f1=0.878
+[tracer.fit +  33.4s] build_rsb: target_TA=0.85
+[tracer.fit +  33.4s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  34.4s]     [  0.9s]  logreg_c1     f1=0.859
+[tracer.fit +  35.0s]     [  0.6s]  logreg_c10    f1=0.830
+[tracer.fit +  35.0s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit +  35.3s]     [  0.3s]  mlp_1h        f1=0.859
+[tracer.fit +  35.4s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +  35.5s]     [  0.1s]  dt            f1=0.747
+[tracer.fit +  36.1s]     [  0.6s]  rf            f1=0.878
+[tracer.fit +  36.6s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  65.4s]     [ 28.7s]  gbt           f1=0.857
+[tracer.fit +  65.4s]   stage_1: surrogate done in 31.9s  best=mlp_2h f1=0.878
+[tracer.fit +  65.6s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit +  66.3s]     [  0.8s]  logreg_c1     f1=0.859
+[tracer.fit +  66.7s]     [  0.4s]  logreg_c10    f1=0.830
+[tracer.fit +  66.8s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit +  66.9s]     [  0.2s]  mlp_1h        f1=0.859
+[tracer.fit +  67.1s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +  67.1s]     [  0.1s]  dt            f1=0.747
+[tracer.fit +  67.9s]     [  0.8s]  rf            f1=0.878
+[tracer.fit +  68.4s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  82.7s]     [ 14.2s]  gbt           f1=0.857
+[tracer.fit +  82.7s]   build_global: surrogate done in 17.1s  best=mlp_2h f1=0.878
+[tracer.fit +  82.7s] build_l2d: target_TA=0.90
+[tracer.fit +  82.7s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  83.5s]     [  0.8s]  logreg_c1     f1=0.859
+[tracer.fit +  84.1s]     [  0.6s]  logreg_c10    f1=0.830
+[tracer.fit +  84.1s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit +  84.6s]     [  0.5s]  mlp_1h        f1=0.859
+[tracer.fit +  84.7s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +  84.8s]     [  0.1s]  dt            f1=0.747
+[tracer.fit +  85.4s]     [  0.6s]  rf            f1=0.878
+[tracer.fit +  85.9s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 111.8s]     [ 26.0s]  gbt           f1=0.857
+[tracer.fit + 111.8s]   stage_1: surrogate done in 29.2s  best=mlp_2h f1=0.878
+[tracer.fit + 112.0s] build_rsb: target_TA=0.90
+[tracer.fit + 112.0s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 112.5s]     [  0.5s]  logreg_c1     f1=0.859
+[tracer.fit + 113.0s]     [  0.5s]  logreg_c10    f1=0.830
+[tracer.fit + 113.1s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit + 113.2s]     [  0.2s]  mlp_1h        f1=0.859
+[tracer.fit + 113.4s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 113.4s]     [  0.1s]  dt            f1=0.747
+[tracer.fit + 114.0s]     [  0.6s]  rf            f1=0.878
+[tracer.fit + 114.5s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 128.6s]     [ 14.1s]  gbt           f1=0.857
+[tracer.fit + 128.6s]   stage_1: surrogate done in 16.6s  best=mlp_2h f1=0.878
+[tracer.fit + 128.8s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit + 129.4s]     [  0.5s]  logreg_c1     f1=0.859
+[tracer.fit + 129.9s]     [  0.6s]  logreg_c10    f1=0.830
+[tracer.fit + 130.0s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit + 130.1s]     [  0.2s]  mlp_1h        f1=0.859
+[tracer.fit + 130.3s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 130.3s]     [  0.1s]  dt            f1=0.747
+[tracer.fit + 131.0s]     [  0.7s]  rf            f1=0.878
+[tracer.fit + 131.5s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 155.8s]     [ 24.3s]  gbt           f1=0.857
+[tracer.fit + 155.8s]   build_global: surrogate done in 27.0s  best=mlp_2h f1=0.878
+[tracer.fit + 155.8s] build_l2d: target_TA=0.95
+[tracer.fit + 155.8s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 156.5s]     [  0.7s]  logreg_c1     f1=0.859
+[tracer.fit + 156.9s]     [  0.3s]  logreg_c10    f1=0.830
+[tracer.fit + 156.9s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit + 157.1s]     [  0.2s]  mlp_1h        f1=0.859
+[tracer.fit + 157.2s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 157.3s]     [  0.0s]  dt            f1=0.747
+[tracer.fit + 157.9s]     [  0.6s]  rf            f1=0.878
+[tracer.fit + 158.3s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 173.0s]     [ 14.7s]  gbt           f1=0.857
+[tracer.fit + 173.0s]   stage_1: surrogate done in 17.2s  best=mlp_2h f1=0.878
+[tracer.fit + 173.2s] build_rsb: target_TA=0.95
+[tracer.fit + 173.2s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 173.7s]     [  0.5s]  logreg_c1     f1=0.859
+[tracer.fit + 174.0s]     [  0.3s]  logreg_c10    f1=0.830
+[tracer.fit + 174.1s]     [  0.1s]  sgd_log       f1=0.858
+[tracer.fit + 174.2s]     [  0.1s]  mlp_1h        f1=0.859
+[tracer.fit + 174.3s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 174.4s]     [  0.1s]  dt            f1=0.747
+[tracer.fit + 175.0s]     [  0.7s]  rf            f1=0.878
+[tracer.fit + 175.5s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 199.0s]     [ 23.5s]  gbt           f1=0.857
+[tracer.fit + 199.0s]   stage_1: surrogate done in 25.8s  best=mlp_2h f1=0.878
+[tracer.fit + 199.3s]   stage_2: surrogate sweep on 242 train / 72 val
+[tracer.fit + 199.5s]     [  0.3s]  logreg_c1     f1=0.846
+[tracer.fit + 199.6s]     [  0.1s]  logreg_c10    f1=0.821
+[tracer.fit + 199.7s]     [  0.1s]  sgd_log       f1=0.860
+[tracer.fit + 199.8s]     [  0.2s]  mlp_1h        f1=0.862
+[tracer.fit + 199.9s]     [  0.1s]  mlp_2h        f1=0.862
+[tracer.fit + 200.0s]     [  0.0s]  dt            f1=0.675
+[tracer.fit + 200.6s]     [  0.6s]  rf            f1=0.862
+[tracer.fit + 201.0s]     [  0.5s]  et            f1=0.862
+[tracer.fit + 211.4s]     [ 10.3s]  gbt           f1=0.849
+[tracer.fit + 211.4s]   stage_2: surrogate done in 12.1s  best=mlp_1h f1=0.862
+  Coverage:          1.0000
+  Teacher Agreement:  0.9200
+
+Fitting FastEmbed ...
+[tracer.fit +   0.0s] fit_frontier: X=(500, 384) targets=[0.85, 0.9, 0.95] max_fit_labels=8000
+[tracer.fit +   0.0s] fit_frontier: split -> 300 train / 100 val / 100 cal
+[tracer.fit +   0.0s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit +   0.3s]     [  0.3s]  logreg_c1     f1=0.878
+[tracer.fit +   0.4s]     [  0.1s]  logreg_c10    f1=0.878
+[tracer.fit +   0.5s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit +   0.7s]     [  0.1s]  mlp_1h        f1=0.878
+[tracer.fit +   0.8s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +   0.8s]     [  0.1s]  dt            f1=0.756
+[tracer.fit +   1.5s]     [  0.7s]  rf            f1=0.878
+[tracer.fit +   2.0s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  24.9s]     [ 22.9s]  gbt           f1=0.867
+[tracer.fit +  24.9s]   build_global: surrogate done in 24.9s  best=logreg_c1 f1=0.878
+[tracer.fit +  24.9s] build_l2d: target_TA=0.85
+[tracer.fit +  24.9s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  25.2s]     [  0.3s]  logreg_c1     f1=0.878
+[tracer.fit +  25.4s]     [  0.2s]  logreg_c10    f1=0.878
+[tracer.fit +  25.5s]     [  0.2s]  sgd_log       f1=0.848
+[tracer.fit +  25.7s]     [  0.2s]  mlp_1h        f1=0.878
+[tracer.fit +  26.0s]     [  0.2s]  mlp_2h        f1=0.878
+[tracer.fit +  26.1s]     [  0.1s]  dt            f1=0.756
+[tracer.fit +  27.1s]     [  1.0s]  rf            f1=0.878
+[tracer.fit +  27.5s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  41.3s]     [ 13.7s]  gbt           f1=0.867
+[tracer.fit +  41.3s]   stage_1: surrogate done in 16.4s  best=logreg_c1 f1=0.878
+[tracer.fit +  41.3s] build_rsb: target_TA=0.85
+[tracer.fit +  41.3s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  41.6s]     [  0.3s]  logreg_c1     f1=0.878
+[tracer.fit +  41.8s]     [  0.2s]  logreg_c10    f1=0.878
+[tracer.fit +  41.9s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit +  42.0s]     [  0.1s]  mlp_1h        f1=0.878
+[tracer.fit +  42.1s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit +  42.2s]     [  0.1s]  dt            f1=0.756
+[tracer.fit +  42.9s]     [  0.7s]  rf            f1=0.878
+[tracer.fit +  43.4s]     [  0.5s]  et            f1=0.878
+[tracer.fit +  61.7s]     [ 18.3s]  gbt           f1=0.867
+[tracer.fit +  61.7s]   stage_1: surrogate done in 20.4s  best=logreg_c1 f1=0.878
+[tracer.fit +  61.8s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit +  62.0s]     [  0.3s]  logreg_c1     f1=0.878
+[tracer.fit +  62.2s]     [  0.1s]  logreg_c10    f1=0.878
+[tracer.fit +  62.4s]     [  0.2s]  sgd_log       f1=0.848
+[tracer.fit +  62.5s]     [  0.2s]  mlp_1h        f1=0.878
+[tracer.fit +  62.9s]     [  0.3s]  mlp_2h        f1=0.878
+[tracer.fit +  63.0s]     [  0.1s]  dt            f1=0.756
+[tracer.fit +  64.2s]     [  1.3s]  rf            f1=0.878
+[tracer.fit +  65.2s]     [  0.9s]  et            f1=0.878
+[tracer.fit +  83.3s]     [ 18.1s]  gbt           f1=0.867
+[tracer.fit +  83.3s]   build_global: surrogate done in 21.5s  best=logreg_c1 f1=0.878
+[tracer.fit +  83.3s] build_l2d: target_TA=0.90
+[tracer.fit +  83.3s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit +  83.5s]     [  0.2s]  logreg_c1     f1=0.878
+[tracer.fit +  83.6s]     [  0.1s]  logreg_c10    f1=0.878
+[tracer.fit +  83.7s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit +  83.9s]     [  0.2s]  mlp_1h        f1=0.878
+[tracer.fit +  84.1s]     [  0.2s]  mlp_2h        f1=0.878
+[tracer.fit +  84.1s]     [  0.1s]  dt            f1=0.756
+[tracer.fit +  84.8s]     [  0.7s]  rf            f1=0.878
+[tracer.fit +  85.4s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 100.8s]     [ 15.4s]  gbt           f1=0.867
+[tracer.fit + 100.8s]   stage_1: surrogate done in 17.5s  best=logreg_c1 f1=0.878
+[tracer.fit + 100.8s] build_rsb: target_TA=0.90
+[tracer.fit + 100.8s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 101.1s]     [  0.2s]  logreg_c1     f1=0.878
+[tracer.fit + 101.2s]     [  0.2s]  logreg_c10    f1=0.878
+[tracer.fit + 101.4s]     [  0.2s]  sgd_log       f1=0.848
+[tracer.fit + 101.6s]     [  0.2s]  mlp_1h        f1=0.878
+[tracer.fit + 101.8s]     [  0.2s]  mlp_2h        f1=0.878
+[tracer.fit + 101.9s]     [  0.1s]  dt            f1=0.756
+[tracer.fit + 103.1s]     [  1.2s]  rf            f1=0.878
+[tracer.fit + 104.1s]     [  1.0s]  et            f1=0.878
+[tracer.fit + 125.2s]     [ 21.1s]  gbt           f1=0.867
+[tracer.fit + 125.2s]   stage_1: surrogate done in 24.4s  best=logreg_c1 f1=0.878
+[tracer.fit + 125.2s]   build_global: surrogate sweep on 300 train / 100 val
+[tracer.fit + 125.4s]     [  0.2s]  logreg_c1     f1=0.878
+[tracer.fit + 125.5s]     [  0.1s]  logreg_c10    f1=0.878
+[tracer.fit + 125.7s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit + 125.8s]     [  0.1s]  mlp_1h        f1=0.878
+[tracer.fit + 125.9s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 125.9s]     [  0.1s]  dt            f1=0.756
+[tracer.fit + 126.6s]     [  0.6s]  rf            f1=0.878
+[tracer.fit + 127.1s]     [  0.6s]  et            f1=0.878
+[tracer.fit + 141.2s]     [ 14.1s]  gbt           f1=0.867
+[tracer.fit + 141.2s]   build_global: surrogate done in 16.0s  best=logreg_c1 f1=0.878
+[tracer.fit + 141.2s] build_l2d: target_TA=0.95
+[tracer.fit + 141.2s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 141.4s]     [  0.2s]  logreg_c1     f1=0.878
+[tracer.fit + 141.5s]     [  0.1s]  logreg_c10    f1=0.878
+[tracer.fit + 141.6s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit + 141.8s]     [  0.1s]  mlp_1h        f1=0.878
+[tracer.fit + 142.3s]     [  0.5s]  mlp_2h        f1=0.878
+[tracer.fit + 142.4s]     [  0.1s]  dt            f1=0.756
+[tracer.fit + 143.1s]     [  0.7s]  rf            f1=0.878
+[tracer.fit + 143.6s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 166.6s]     [ 23.0s]  gbt           f1=0.867
+[tracer.fit + 166.6s]   stage_1: surrogate done in 25.4s  best=logreg_c1 f1=0.878
+[tracer.fit + 166.6s] build_rsb: target_TA=0.95
+[tracer.fit + 166.6s]   stage_1: surrogate sweep on 300 train / 100 val
+[tracer.fit + 166.9s]     [  0.4s]  logreg_c1     f1=0.878
+[tracer.fit + 167.2s]     [  0.2s]  logreg_c10    f1=0.878
+[tracer.fit + 167.3s]     [  0.1s]  sgd_log       f1=0.848
+[tracer.fit + 167.4s]     [  0.1s]  mlp_1h        f1=0.878
+[tracer.fit + 167.6s]     [  0.1s]  mlp_2h        f1=0.878
+[tracer.fit + 167.6s]     [  0.1s]  dt            f1=0.756
+[tracer.fit + 168.3s]     [  0.7s]  rf            f1=0.878
+[tracer.fit + 168.8s]     [  0.5s]  et            f1=0.878
+[tracer.fit + 183.6s]     [ 14.8s]  gbt           f1=0.867
+[tracer.fit + 183.6s]   stage_1: surrogate done in 17.0s  best=logreg_c1 f1=0.878
+[tracer.fit + 183.6s]   stage_2: surrogate sweep on 269 train / 81 val
+[tracer.fit + 183.6s]     [  0.0s]  logreg_c1     f1=0.844
+[tracer.fit + 183.6s]     [  0.0s]  logreg_c10    f1=0.844
+[tracer.fit + 183.8s]     [  0.2s]  sgd_log       f1=0.844
+[tracer.fit + 184.0s]     [  0.2s]  mlp_1h        f1=0.844
+[tracer.fit + 184.1s]     [  0.2s]  mlp_2h        f1=0.844
+[tracer.fit + 184.2s]     [  0.0s]  dt            f1=0.818
+[tracer.fit + 184.8s]     [  0.7s]  rf            f1=0.844
+[tracer.fit + 185.3s]     [  0.5s]  et            f1=0.844
+[tracer.fit + 207.3s]     [ 22.0s]  gbt           f1=0.844
+[tracer.fit + 207.3s]   stage_2: surrogate done in 23.7s  best=logreg_c1 f1=0.844
+  Coverage:          1.0000
+  Teacher Agreement:  0.9200
+
+───────────────────────────────────────────────────────
+                  Backend    Coverage  Teacher TA
+───────────────────────────────────────────────────────
+    sentence-transformers      1.0000      0.9200
+                FastEmbed      1.0000      0.9200
+───────────────────────────────────────────────────────
+
+No regression — both backends produce equivalent routing policies.
