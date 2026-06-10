@@ -240,10 +240,10 @@ else:
 
 ## `Router.predict_batch()`
 
-Route a batch of inputs. Accepts list of texts or embedding matrix.
+Route a batch of inputs in a single vectorized pass. Accepts a list of texts or an embedding matrix.
 
 ```python
-router.predict_batch(inputs) -> dict
+router.predict_batch(inputs, fallback=None) -> dict
 ```
 
 **Parameters:**
@@ -251,16 +251,18 @@ router.predict_batch(inputs) -> dict
 | Name | Type | Description |
 |------|------|-------------|
 | `inputs` | `list[str] \| np.ndarray` | Texts (requires embedder) or embeddings `(n, dim)` |
+| `fallback` | `callable \| None` | Called for each **deferred** item as `fallback(original_input) -> label`. `original_input` is the text (list input) or the embedding row (array input). When omitted, deferred items keep `label=None` (backward compatible). |
 
 **Returns:**
 
 ```python
 {
-    "labels":    list[str],     # predicted labels for all inputs
-    "decisions": list[str],     # "handled" or "deferred" for each
-    "handled":   np.ndarray,    # bool array, shape (n,)
-    "preds":     np.ndarray,    # label indices, shape (n,)
-    "stage_id":  np.ndarray,    # int array, shape (n,)
+    "labels":        list,         # predicted (or fallback) labels for all inputs
+    "decisions":     list[str],    # "handled" or "deferred" for each
+    "handled":       np.ndarray,   # bool array, shape (n,)
+    "preds":         np.ndarray,   # label indices, shape (n,)
+    "stage_id":      np.ndarray,   # int array, shape (n,)
+    "accept_scores": np.ndarray,   # float array, shape (n,)
 }
 ```
 
@@ -271,11 +273,29 @@ router.predict_batch(inputs) -> dict
 batch = router.predict_batch(["query 1", "query 2", "query 3"])
 print(batch["decisions"])  # ["handled", "handled", "deferred"]
 
-# Batch embeddings
-batch = router.predict_batch(X_test)
-n_handled = batch["handled"].sum()
-print(f"Handled: {n_handled}/{len(X_test)}")
+# Fill deferred items with the teacher in the same call
+batch = router.predict_batch(X_test, fallback=lambda emb: call_my_llm(emb))
 ```
+
+---
+
+## `Router.apredict()` / `Router.apredict_batch()`
+
+Async counterparts for high-throughput, concurrent pipelines. The surrogate runs
+inline (sub-millisecond); only the teacher `fallback` is awaited.
+
+```python
+await router.apredict(input, fallback=None)                            # fallback() -> label
+await router.apredict_batch(inputs, fallback=None, max_concurrency=8)   # fallback(x) -> label
+```
+
+`apredict_batch` runs the surrogate once over the whole batch, then resolves any
+deferred items through `fallback` concurrently (bounded by `max_concurrency`).
+`fallback` may be sync or async. Both return the same dict shape as
+`predict` / `predict_batch`.
+
+To coalesce many *independent* concurrent calls into shared vectorized passes,
+see [`AsyncBatcher`](highthroughput.md).
 
 ---
 

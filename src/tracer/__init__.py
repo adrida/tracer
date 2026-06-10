@@ -8,6 +8,7 @@ from tracer.api import fit, report, load_router, update
 from tracer.analysis.html_report import generate_html_report
 from tracer.analysis.sankey import generate_sankey
 from tracer.runtime.serve import serve
+from tracer.runtime.batching import AsyncBatcher
 from tracer.embeddings.embedder import Embedder
 from tracer.config import FitConfig, EmbeddingConfig
 from tracer.types import (
@@ -34,6 +35,7 @@ __all__ = [
     "generate_html_report",
     "generate_sankey",
     "serve",
+    "AsyncBatcher",
     "Embedder",
     # Config
     "FitConfig",
