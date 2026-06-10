@@ -27,18 +27,44 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+
+# ── Core dependencies ──────────────────────────────────────────────────────────
+# These are the only packages required for the core fit/route/update workflow.
+# Embedding generation requires an optional extra (see below).
 dependencies = [
     "numpy>=1.21,<2.1",
     "scikit-learn>=1.0",
     "joblib>=1.1",
 ]
 
+# ── Optional dependency groups ─────────────────────────────────────────────────
+# Each group is installed with:  pip install tracer-llm[<group>]
+#
+# TRACER supports multiple embedding backends.  Choose the one that fits your
+# deployment constraints:
+#
+#   [embeddings]  – PyTorch-based (sentence-transformers).  Best GPU support.
+#   [fastembed]   – ONNX-based (FastEmbed).  No PyTorch, ~2x faster on CPU.
+#                    Lighter cold start, ideal for serverless/Lambda.
+#   [faiss]       – FAISS index for qualitative analysis (optional).
 [project.optional-dependencies]
+
+# PyTorch-based embedding backend.
+# Includes the full sentence-transformers library and its PyTorch dependency.
+# Best choice when you have a GPU or already use PyTorch in your stack.
 embeddings = [
     "sentence-transformers>=2.2,<5",
     "torch>=2.0",
     "numpy>=1.21,<2.1",
 ]
+
+# ONNX-based embedding backend (no PyTorch).
+# FastEmbed uses pre-quantized ONNX models and ONNX Runtime for CPU-first
+# inference.  Eliminates the ~2 GB PyTorch install.  Typically 1.7–3.3×
+# faster on CPU than sentence-transformers for the same base model.
+# Install with:  pip install tracer-llm[fastembed]
+fastembed = ["fastembed>=0.3.0"]
+
 faiss = ["faiss-cpu>=1.7"]
 notebooks = [
     "faiss-cpu>=1.7",
@@ -53,10 +79,16 @@ notebooks = [
 viz = ["plotly>=5.0", "kaleido>=0.2"]
 xgboost = ["xgboost>=1.7"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+
+# "Batteries included" install: all optional features.
+# Includes both embedding backends so users can choose at runtime.
 all = [
+    # Embedding backends
     "sentence-transformers>=2.2,<5",
     "torch>=2.0",
     "numpy>=1.21,<2.1",
+    "fastembed>=0.8.0",          # <-- Added: ONNX backend, no PyTorch required
+    # Optional components
     "faiss-cpu>=1.7",
     "xgboost>=1.7",
     "plotly>=5.0",

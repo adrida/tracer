@@ -132,21 +132,26 @@ The parity gate re-calibrates on each update, so coverage only increases when th
 ```python
 from tracer import Embedder
 
-embedder = Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")  # local
-embedder = Embedder.from_endpoint("https://api.example.com/embed", headers={...})  # API
-embedder = Embedder.from_callable(my_fn)  # any function
-# or skip the embedder and pass raw np.ndarray embeddings directly
+# PyTorch-based (requires: pip install tracer-llm[embeddings])
+embedder = Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
+
+# ONNX-based, no PyTorch required (requires: pip install tracer-llm[fastembed])
+embedder = Embedder.from_fastembed("BAAI/bge-small-en-v1.5")
+
+# HTTP API
+embedder = Embedder.from_endpoint("https://api.example.com/embed", headers={...})
+
+# Any custom function
+embedder = Embedder.from_callable(my_fn)
+
+# Or skip the embedder and pass raw np.ndarray embeddings directly
 ```
 
-Need to compute embeddings at fit time?
-
-```bash
-pip install tracer-llm[embeddings]   # adds sentence-transformers
+> **Why FastEmbed?** Uses ONNX Runtime with pre-quantized models. No PyTorch or CUDA dependency — ~2× faster on CPU, lighter cold starts, ideal for serverless deployments.
 ```
 
-```python
-X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
-```
+---
+
 
 ## CLI
 
@@ -172,7 +177,8 @@ X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 
 ```bash
 pip install tracer-llm                # core (numpy + sklearn + joblib)
-pip install tracer-llm[embeddings]    # + sentence-transformers
+pip install tracer-llm[embeddings]    # + sentence-transformers (PyTorch-based embeddings)
+pip install tracer-llm[fastembed]     # + FastEmbed (ONNX-based embeddings, no PyTorch)
 pip install tracer-llm[all]           # everything
 ```
 

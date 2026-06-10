@@ -1,7 +1,8 @@
 """Unified embedding interface for TRACER.
 
-Supports three backends:
+Supports four backends:
     Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
+    Embedder.from_fastembed("BAAI/bge-small-en-v1.5")
     Embedder.from_endpoint("https://api.example.com/embed")
     Embedder.from_callable(my_fn)
 
@@ -70,6 +71,56 @@ class Embedder:
 
         embedder = cls(_embed)
         embedder._backend = "sentence-transformers"
+        embedder._model = model
+        return embedder
+
+    # ── Factory: FastEmbed (ONNX, no PyTorch) ────────────────────────────────
+
+    @classmethod
+    def from_fastembed(
+        cls,
+        model: str = "BAAI/bge-small-en-v1.5",
+        batch_size: int = 256,
+        normalize: bool = True,
+    ) -> "Embedder":
+        """Create an Embedder using a FastEmbed model (ONNX, no PyTorch required).
+
+        Requires: pip install tracer-llm[fastembed]
+
+        Parameters
+        ----------
+        model : model name or path (default "BAAI/bge-small-en-v1.5").
+        batch_size : number of texts to encode at once.
+        normalize : whether to L2‑normalise embeddings.
+        """
+        try:
+            from fastembed import TextEmbedding
+        except ImportError:
+            raise ImportError(
+                "fastembed is required.\n"
+                "Install with: pip install tracer-llm[fastembed]"
+            )
+        encoder = TextEmbedding(model_name=model)
+
+        # Probe the embedding dimension once so we can handle empty input.
+        dummy_out = list(encoder.embed(["dimension probe"], batch_size=1))
+        dim = dummy_out[0].shape[0] if dummy_out else 0
+
+        def _embed(texts: List[str]) -> np.ndarray:
+            # Handle empty input: return a valid (0, dim) array.
+            if not texts:
+                return np.empty((0, dim), dtype=np.float32)
+
+            # FastEmbed's embed() returns a generator of numpy arrays.
+            embs = list(encoder.embed(texts, batch_size=batch_size))
+            out = np.vstack(embs).astype(np.float32)
+            if normalize:
+                norms = np.linalg.norm(out, axis=1, keepdims=True)
+                out = out / np.maximum(norms, 1e-12)
+            return out
+
+        embedder = cls(_embed)
+        embedder._backend = "fastembed"
         embedder._model = model
         return embedder
 
