@@ -57,6 +57,26 @@ def fit(
     config = config or FitConfig()
     notes = []
 
+    # Continual-learning state from a prior fit in this directory, read before
+    # anything is overwritten: the retrain counter to increment, and the last
+    # fit's routing decisions to diff against for per-label temporal deltas.
+    prev_n_retrains = 0
+    prev_decisions = prev_teacher_labels = None
+    _prev_manifest = artifact_dir / "manifest.json"
+    if _prev_manifest.exists():
+        try:
+            prev_n_retrains = load_manifest(_prev_manifest).n_retrains
+        except Exception:
+            prev_n_retrains = 0
+    _prev_routing = artifact_dir / "routing_trace.json"
+    if _prev_routing.exists():
+        try:
+            _pr = json.loads(_prev_routing.read_text(encoding="utf-8"))
+            prev_decisions = _pr.get("decisions")
+            prev_teacher_labels = _pr.get("teacher_labels")
+        except Exception:
+            prev_decisions = prev_teacher_labels = None
+
     dataset = load_traces(trace_path)
     labels = sorted(dataset.label_space)
     label_to_idx = {l: i for i, l in enumerate(labels)}
@@ -147,8 +167,16 @@ def fit(
             texts=texts, teacher_labels=teacher_labels_str,
             decisions=decisions, local_labels=local_labels_str,
             accept_scores=scores,
-            trace_ids=[r.trace_id for r in dataset.records])
+            trace_ids=[r.trace_id for r in dataset.records],
+            previous_decisions=prev_decisions,
+            previous_teacher_labels=prev_teacher_labels)
         qual_path = save_qualitative_report(artifact_dir, qual_report)
+
+        # Persist this fit's routing decisions so the next fit/update can
+        # compute temporal deltas against it.
+        (artifact_dir / "routing_trace.json").write_text(
+            json.dumps({"decisions": decisions, "teacher_labels": teacher_labels_str}),
+            encoding="utf-8")
     else:
         notes.append("No deployable pipeline met the target teacher-parity threshold.")
 
@@ -190,7 +218,7 @@ def fit(
         label_space=labels, selected_method=method,
         target_teacher_agreement=config.target_teacher_agreement,
         coverage_cal=cov_cal, teacher_agreement_cal=ta_cal,
-        embedding_dim=X.shape[1], n_retrains=1,
+        embedding_dim=X.shape[1], n_retrains=prev_n_retrains + 1,
         pipeline_path=pipeline_path, index_path=str(index_path),
         config_path=str(config_path),
         qualitative_report_path=qual_path)

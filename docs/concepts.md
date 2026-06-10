@@ -130,6 +130,8 @@ Every `tracer.update()` call:
 4. Re-calibrates threshold
 5. Re-checks parity gate
 
+Each refit increments `manifest.n_retrains` and emits per-label **temporal deltas** (see below) diffed against the previous fit's routing decisions, so you can watch coverage move intent by intent across updates.
+
 Coverage grows monotonically as more traces accumulate. Easy intents (tight embedding clusters) become self-serve first; ambiguous ones may never fully cross the parity bar.
 
 ---

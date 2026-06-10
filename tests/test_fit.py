@@ -231,6 +231,56 @@ def test_update_missing_all_traces_raises_clear_error():
             update(new_path, artifact_dir=artifact_dir)
 
 
+# ── Continual-learning telemetry ──────────────────────────────────────────────
+
+def test_update_increments_n_retrains():
+    """n_retrains tracks how many times the policy has been refit."""
+    from tracer.api import fit, update
+    with tempfile.TemporaryDirectory() as tmp:
+        path, X, _ = _make_traces(tmp, n=200)
+        artifact_dir = Path(tmp) / ".tracer"
+        r0 = fit(path, artifact_dir=artifact_dir)
+        assert r0.manifest.n_retrains == 1
+
+        new_path = Path(tmp) / "new_traces.jsonl"
+        rng = np.random.RandomState(99)
+        X_new = rng.randn(80, 32).astype(np.float32)
+        with new_path.open("w") as f:
+            for i in range(80):
+                f.write(json.dumps({"input": f"new {i}", "teacher": f"cls_{i % 4}"}) + "\n")
+        np.save(new_path.with_suffix(".npy"), X_new)
+
+        r1 = update(new_path, artifact_dir=artifact_dir)
+        assert r1.manifest.n_retrains == 2
+        r2 = update(new_path, artifact_dir=artifact_dir)
+        assert r2.manifest.n_retrains == 3
+
+
+def test_update_populates_temporal_deltas():
+    """After an update, the qualitative report should carry per-label deltas
+    against the previous fit (empty on a first fit, populated on refit)."""
+    from tracer.api import fit, update
+    with tempfile.TemporaryDirectory() as tmp:
+        path, X, _ = _make_traces(tmp, n=300)
+        artifact_dir = Path(tmp) / ".tracer"
+        r0 = fit(path, artifact_dir=artifact_dir)
+        if r0.manifest.selected_method is None:
+            pytest.skip("No deployable pipeline at this target")
+        assert r0.qualitative_report.temporal_deltas == []  # nothing to diff against yet
+
+        new_path = Path(tmp) / "new_traces.jsonl"
+        rng = np.random.RandomState(7)
+        X_new = (X[:120] + rng.randn(120, 32).astype(np.float32) * 0.2).astype(np.float32)
+        with new_path.open("w") as f:
+            for i in range(120):
+                f.write(json.dumps({"input": f"more {i}", "teacher": f"cls_{i % 4}"}) + "\n")
+        np.save(new_path.with_suffix(".npy"), X_new)
+
+        r1 = update(new_path, artifact_dir=artifact_dir)
+        if r1.manifest.selected_method is not None:
+            assert len(r1.qualitative_report.temporal_deltas) > 0
+
+
 # ── Qualitative report ────────────────────────────────────────────────────────
 
 def test_qualitative_report():
