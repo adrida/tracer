@@ -11,6 +11,7 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import numpy as np
+from scipy.stats import beta as _beta
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.pipeline import Pipeline
@@ -27,9 +28,16 @@ def _noop_log(_msg: str) -> None:
 
 
 def _split_buffer(X: np.ndarray, y: np.ndarray, seed: int = 42):
-    """Stratified train / val / cal split with fallback for tiny classes."""
+    """Stratified train / val / cal / test split with fallback for tiny classes.
+
+    The ``test`` partition is held out from both surrogate selection (which uses
+    ``val``) and threshold calibration (which uses ``cal``). It exists solely to
+    estimate routing quality for the deploy gate on data that played no part in
+    fitting the policy — without it the reported teacher agreement is an
+    in-sample, optimistically-biased number.
+    """
     rng = np.random.RandomState(seed)
-    train_idx, val_idx, cal_idx = [], [], []
+    train_idx, val_idx, cal_idx, test_idx = [], [], [], []
 
     for cls in np.unique(y):
         ci = np.where(y == cls)[0]
@@ -42,22 +50,29 @@ def _split_buffer(X: np.ndarray, y: np.ndarray, seed: int = 42):
         if n == 3:
             train_idx.append(int(ci[0])); val_idx.append(int(ci[1]))
             cal_idx.append(int(ci[2])); continue
-        nv = max(1, int(round(0.2 * n)))
-        nc = max(1, int(round(0.2 * n)))
-        if nv + nc >= n:
-            nv, nc = 1, 1
-        nt = n - nv - nc
+        if n == 4:
+            train_idx.append(int(ci[0])); val_idx.append(int(ci[1]))
+            cal_idx.append(int(ci[2])); test_idx.append(int(ci[3])); continue
+        nv = max(1, int(round(0.15 * n)))
+        nc = max(1, int(round(0.15 * n)))
+        nte = max(1, int(round(0.15 * n)))
+        if nv + nc + nte >= n:
+            nv, nc, nte = 1, 1, 1
+        nt = n - nv - nc - nte
         train_idx.extend(ci[:nt].tolist())
         val_idx.extend(ci[nt:nt + nv].tolist())
-        cal_idx.extend(ci[nt + nv:].tolist())
+        cal_idx.extend(ci[nt + nv:nt + nv + nc].tolist())
+        test_idx.extend(ci[nt + nv + nc:].tolist())
 
     train_idx = np.array(sorted(train_idx), dtype=int)
     val_idx = np.array(sorted(val_idx), dtype=int)
     cal_idx = np.array(sorted(cal_idx), dtype=int)
+    test_idx = np.array(sorted(test_idx), dtype=int)
     return {
         "X_train": X[train_idx], "y_train": y[train_idx],
         "X_val": X[val_idx], "y_val": y[val_idx],
         "X_cal": X[cal_idx], "y_cal": y[cal_idx],
+        "X_test": X[test_idx], "y_test": y[test_idx],
         "n_fit": len(X),
     }
 
@@ -320,17 +335,67 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
             "teacher_agreement_cal_total": ta}
 
 
+def _clopper_pearson_lower(k: int, n: int, alpha: float) -> float:
+    """One-sided Clopper-Pearson lower bound on a binomial proportion.
+
+    Returns the largest p such that, at confidence ``1 - alpha``, the true
+    accept-set agreement is at least this value given ``k`` agreements out of
+    ``n`` accepted samples.
+    """
+    if n == 0 or k == 0:
+        return 0.0
+    if k >= n:
+        return float(alpha ** (1.0 / n))
+    return float(_beta.ppf(alpha, k, n - k + 1))
+
+
+def _heldout_eval(stages: list, X_test, y_test, alpha: Optional[float]):
+    """Route the held-out split and measure parity on data used for neither
+    surrogate selection nor threshold calibration.
+
+    ``gate_value`` is what the deploy gate compares against the target: the
+    point estimate when ``alpha`` is None, or the Clopper-Pearson lower bound
+    when a confidence level is requested (a real finite-sample certificate —
+    only one threshold is evaluated here, so there is no multiplicity to
+    correct for).
+    """
+    if len(X_test) == 0:
+        return None
+    preds, handled, _ = route_pipeline(stages, X_test)
+    n = int(handled.sum())
+    if n == 0:
+        return {"coverage": 0.0, "agreement": 0.0, "agreement_lb": 0.0,
+                "n_heldout": 0, "gate_value": 0.0}
+    k = int((preds[handled] == y_test[handled]).sum())
+    agreement = k / n
+    lb = _clopper_pearson_lower(k, n, alpha if alpha is not None else 0.05)
+    return {"coverage": float(handled.mean()), "agreement": float(agreement),
+            "agreement_lb": float(lb), "n_heldout": n,
+            "gate_value": float(lb if alpha is not None else agreement)}
+
+
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
+                 parity_alpha: Optional[float] = None,
                  log: Optional[LogFn] = None, skip: Iterable[str] = ()):
-    """Build global/l2d/rsb for each target TA, return best per target."""
+    """Build global/l2d/rsb for each target TA, return best per target.
+
+    The deploy gate is evaluated on the held-out ``test`` split rather than on
+    the calibration split that selected each threshold, so the coverage and
+    teacher-agreement numbers a candidate is judged (and reported) on are not
+    inflated by selection bias. ``parity_alpha``, when set, additionally
+    requires a Clopper-Pearson lower bound on the held-out agreement to clear
+    the target.
+    """
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
         f"max_fit_labels={max_fit_labels}"
+        + (f" parity_alpha={parity_alpha}" if parity_alpha is not None else "")
         + (f" skip={tuple(skip)}" if tuple(skip) else ""))
     X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels)
     split = _split_buffer(X_fit, y_fit)
     log(f"fit_frontier: split -> {len(split['X_train'])} train / "
-        f"{len(split['X_val'])} val / {len(split['X_cal'])} cal")
+        f"{len(split['X_val'])} val / {len(split['X_cal'])} cal / "
+        f"{len(split['X_test'])} test")
     builders = {"global": build_global, "l2d": build_l2d, "rsb": build_rsb}
     frontier = []
 
@@ -339,15 +404,34 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
         for method_name, builder in builders.items():
             pipeline = builder(split, target, log=log, skip=skip)
             pipeline["summary"]["method"] = method_name
-            if pipeline["summary"].get("coverage_cal_total", 0.0) < min_coverage:
-                if pipeline["summary"].get("status") == "ok":
-                    pipeline["summary"]["status"] = "below_min_coverage"
+
+            # Re-evaluate on the held-out test split. The builder's cal numbers
+            # are kept for transparency but the gate uses held-out estimates.
+            ev = (_heldout_eval(pipeline["stages"], split["X_test"], split["y_test"],
+                                parity_alpha) if pipeline["stages"] else None)
+            s = pipeline["summary"]
+            if ev is not None:
+                s["coverage_cal_insample"] = s.get("coverage_cal_total")
+                s["teacher_agreement_cal_insample"] = s.get("teacher_agreement_cal_total")
+                s["coverage_cal_total"] = ev["coverage"]
+                s["teacher_agreement_cal_total"] = ev["agreement"]
+                s["teacher_agreement_heldout_lb"] = ev["agreement_lb"]
+                s["n_heldout"] = ev["n_heldout"]
+                s["gate_value"] = ev["gate_value"]
+            else:
+                # No held-out data (pathologically tiny input): fall back to the
+                # in-sample number rather than blocking deployment outright.
+                s["gate_value"] = s.get("teacher_agreement_cal_total", 0.0)
+
+            if s.get("coverage_cal_total", 0.0) < min_coverage:
+                if s.get("status") == "ok":
+                    s["status"] = "below_min_coverage"
                 pipeline["stages"] = []
             candidates.append(pipeline)
 
         deployable = [c for c in candidates
                       if c["summary"].get("status") == "ok"
-                      and c["summary"].get("teacher_agreement_cal_total", 0.0) >= target
+                      and c["summary"].get("gate_value", 0.0) >= target
                       and c["summary"].get("coverage_cal_total", 0.0) >= min_coverage]
         best = None
         if deployable:

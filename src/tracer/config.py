@@ -25,6 +25,12 @@ class FitConfig:
     frontier_targets: Tuple[float, ...] = (0.85, 0.90, 0.95)
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
+    # Confidence level for the parity gate. When None, the gate uses the
+    # point estimate of teacher agreement on the held-out split. When set
+    # (e.g. 0.05), it instead requires a Clopper-Pearson lower bound at
+    # confidence 1 - parity_alpha to clear the target, turning the gate into a
+    # finite-sample certificate at the cost of some coverage on small data.
+    parity_alpha: Optional[float] = None
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     seed: int = 42
     # Emit per-candidate + per-stage progress to stderr during fit. Disable
@@ -54,3 +60,7 @@ class FitConfig:
                 f"{self.min_deploy_coverage}")
         if self.max_fit_labels <= 0:
             raise ValueError(f"max_fit_labels must be > 0, got {self.max_fit_labels}")
+        if self.parity_alpha is not None and not 0.0 < self.parity_alpha < 0.5:
+            raise ValueError(
+                "parity_alpha must be None or in (0, 0.5), got "
+                f"{self.parity_alpha}")

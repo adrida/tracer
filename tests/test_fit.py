@@ -104,12 +104,15 @@ def test_load_traces_missing_fields_raises():
 def test_fit_and_route():
     from tracer.api import fit, load_router
     with tempfile.TemporaryDirectory() as tmp:
-        path, X, _ = _make_traces(tmp)
+        # Comfortably separable data so the held-out parity gate deploys at the
+        # default 0.90 target with margin (the gate is judged on data used for
+        # neither surrogate selection nor threshold calibration).
+        path, X, _ = _make_traces(tmp, n=600, noise=0.03)
         artifact_dir = Path(tmp) / ".tracer"
 
         result = fit(path, artifact_dir=artifact_dir)
 
-        assert result.manifest.n_traces == 300
+        assert result.manifest.n_traces == 600
         assert result.manifest.embedding_dim == 32
         assert len(result.manifest.label_space) == 4
         assert (artifact_dir / "manifest.json").exists()
@@ -162,7 +165,7 @@ def test_fit_missing_embeddings_raises():
 def test_router_wrong_dim_raises():
     from tracer.api import fit, load_router
     with tempfile.TemporaryDirectory() as tmp:
-        path, X, _ = _make_traces(tmp)
+        path, X, _ = _make_traces(tmp, n=600, noise=0.03)
         result = fit(path, artifact_dir=Path(tmp) / ".tracer")
         if result.manifest.selected_method is None:
             pytest.skip("No deployable pipeline at this target")
@@ -175,7 +178,7 @@ def test_router_wrong_dim_raises():
 def test_router_wrong_dim_batch_raises():
     from tracer.api import fit, load_router
     with tempfile.TemporaryDirectory() as tmp:
-        path, X, _ = _make_traces(tmp)
+        path, X, _ = _make_traces(tmp, n=600, noise=0.03)
         result = fit(path, artifact_dir=Path(tmp) / ".tracer")
         if result.manifest.selected_method is None:
             pytest.skip("No deployable pipeline at this target")
@@ -183,6 +186,61 @@ def test_router_wrong_dim_batch_raises():
         wrong_emb = np.random.randn(5, 64).astype(np.float32)  # 64 != 32
         with pytest.raises(ValueError, match="dimension mismatch"):
             router.predict_batch(wrong_emb)
+
+
+# ── Parity gate (held-out evaluation) ─────────────────────────────────────────
+
+def _borderline_traces(n=300, dim=32, nc=4, noise=0.08, seed=42):
+    """Data where the in-sample agreement clears 0.90 but the true held-out
+    agreement does not — the regime that exposes the calibration bias."""
+    rng = np.random.RandomState(seed)
+    centers = rng.randn(nc, dim) * 3
+    yi = rng.randint(0, nc, n)
+    X = (centers[yi] + rng.randn(n, dim) * 0.8).astype(np.float32)
+    teacher = yi.copy()
+    for i in range(n):
+        if rng.random() < noise:
+            teacher[i] = rng.randint(0, nc)
+    return X, teacher
+
+
+def test_parity_gate_uses_heldout_not_insample():
+    """The deploy gate must judge a candidate on the held-out split, not on the
+    calibration split that selected its threshold. On borderline data the
+    in-sample agreement clears the target while the held-out agreement does
+    not, so the gate must decline rather than ship an inflated number."""
+    from tracer.fit.pipeline import fit_frontier
+    X, teacher = _borderline_traces()
+    item, _ = fit_frontier(X, teacher, [0.90], parity_alpha=None)
+    item = item[0]
+
+    inflated = [c for c in item["candidates"]
+                if (c["summary"].get("teacher_agreement_cal_insample") or 0.0) >= 0.90
+                and (c["summary"].get("teacher_agreement_cal_total") or 0.0) < 0.90]
+    assert inflated, "expected an in-sample-inflated candidate to demonstrate the bias"
+    assert item["best"] is None, "gate must decline when held-out agreement is below target"
+
+
+def test_parity_alpha_lower_bound_is_below_point_estimate():
+    """With parity_alpha set, the gate compares a Clopper-Pearson lower bound
+    (never above the point estimate) against the target; without it, the gate
+    uses the point estimate directly."""
+    from tracer.fit.pipeline import fit_frontier
+    X, teacher = _borderline_traces(n=600, noise=0.03)  # comfortably deployable
+
+    pt, _ = fit_frontier(X, teacher, [0.90], parity_alpha=None)
+    lb, _ = fit_frontier(X, teacher, [0.90], parity_alpha=0.05)
+
+    b_pt = pt[0]["best"]
+    assert b_pt is not None
+    s_pt = b_pt["summary"]
+    assert s_pt["gate_value"] == s_pt["teacher_agreement_cal_total"]
+
+    b_lb = lb[0]["best"]
+    if b_lb is not None:
+        s_lb = b_lb["summary"]
+        assert s_lb["gate_value"] == s_lb["teacher_agreement_heldout_lb"]
+        assert s_lb["teacher_agreement_heldout_lb"] <= s_lb["teacher_agreement_cal_total"] + 1e-9
 
 
 # ── Continual learning ────────────────────────────────────────────────────────
@@ -428,6 +486,17 @@ def test_fitconfig_rejects_bad_scalars():
         FitConfig(min_deploy_coverage=1.5)
     with pytest.raises(ValueError):
         FitConfig(max_fit_labels=0)
+
+
+def test_fitconfig_rejects_bad_parity_alpha():
+    """parity_alpha must be None or in (0, 0.5)."""
+    from tracer.config import FitConfig
+    with pytest.raises(ValueError):
+        FitConfig(parity_alpha=0.0)
+    with pytest.raises(ValueError):
+        FitConfig(parity_alpha=0.7)
+    FitConfig(parity_alpha=0.05)
+    FitConfig(parity_alpha=None)
 
 
 def test_fitconfig_accepts_valid_config():
