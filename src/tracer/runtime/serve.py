@@ -80,6 +80,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "labels": out["labels"],
                 "decisions": out["decisions"],
                 "handled": out["handled"].tolist(),
+                "preds": out["preds"].tolist(),
+                "stage_id": out["stage_id"].tolist(),
             }
             self._json_response(200, result)
         except Exception as e:
