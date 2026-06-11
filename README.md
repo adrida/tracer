@@ -95,7 +95,17 @@ User query → [Embedder] → [ML Surrogate] → [Acceptor Gate]
                                           (traditional ML)
 ```
 
-The surrogate is **not another LLM** - it is a classical ML or shallow DL model (the model zoo includes logistic regression, SGD, LightGBM, random forests, and small feed-forward nets). This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
+The surrogate is **not another LLM** - it is a classical ML or shallow DL model (the model zoo includes logistic regression, SGD, LightGBM, random forests, and small feed-forward nets). This is what makes the cost reduction real: classifier inference is CPU-bound and typically sub-millisecond **once the embedding is already available**.
+
+For live text-in routing, total surrogate-path latency is:
+
+| Component | Meaning |
+|-----------|---------|
+| `t_embed` | Time to encode the query (can dominate on CPU if embeddings are computed live) |
+| `t_classify` | Surrogate classifier inference time |
+| `t_total` | Full surrogate path: `t_embed + t_classify` |
+
+Any headline latency number should be read with the embedding prerequisite in mind.
 
 1. **Fit** - train a suite of candidate surrogates on your LLM's classification traces; select the best via cross-validated teacher agreement
 2. **Gate** - attach a learned acceptor that estimates, per-input, whether the surrogate will agree with the teacher
@@ -110,6 +120,8 @@ The surrogate is **not another LLM** - it is a classical ML or shallow DL model 
 | Teacher agreement (handled) | 96.1% |
 | End-to-end accuracy | 96.4% |
 | **Annual savings** (10k queries/day) | **$302,850** |
+
+> Latency note: the surrogate timing above assumes precomputed embeddings. If you embed queries live, include encoder time in the end-to-end budget.
 
 ## Continual learning flywheel
 
