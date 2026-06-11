@@ -321,14 +321,15 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
 
 
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
-                 log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                 log: Optional[LogFn] = None, skip: Iterable[str] = (),
+                 seed: int = 42):
     """Build global/l2d/rsb for each target TA, return best per target."""
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
         f"max_fit_labels={max_fit_labels}"
         + (f" skip={tuple(skip)}" if tuple(skip) else ""))
-    X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels)
-    split = _split_buffer(X_fit, y_fit)
+    X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels, seed=seed)
+    split = _split_buffer(X_fit, y_fit, seed=seed)
     log(f"fit_frontier: split -> {len(split['X_train'])} train / "
         f"{len(split['X_val'])} val / {len(split['X_cal'])} cal")
     builders = {"global": build_global, "l2d": build_l2d, "rsb": build_rsb}
