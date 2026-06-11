@@ -259,6 +259,61 @@ def test_qualitative_report_boundary_pairs():
                 assert len(bp.deferred_preview) > 0
 
 
+def test_per_class_thresholds_protect_minority_class(monkeypatch):
+    from tracer.fit import pipeline as p
+
+    class DummyClf:
+        def __init__(self, probs):
+            self._probs = np.asarray(probs, dtype=np.float32)
+
+        def predict_proba(self, X):
+            return self._probs[:len(X)]
+
+    probs = np.array(
+        [[0.99, 0.01], [0.98, 0.02], [0.97, 0.03], [0.96, 0.04], [0.95, 0.05],
+         [0.94, 0.06], [0.93, 0.07], [0.92, 0.08], [0.91, 0.09], [0.90, 0.10],
+         [0.89, 0.11], [0.88, 0.12], [0.87, 0.13], [0.86, 0.14], [0.85, 0.15],
+         [0.84, 0.16], [0.83, 0.17], [0.82, 0.18], [0.19, 0.81], [0.20, 0.80]],
+        dtype=np.float32,
+    )
+
+    def fake_search_best_surrogate(*args, **kwargs):
+        return DummyClf(probs), "dummy", {"teacher_f1": 1.0, "teacher_acc": 1.0}
+
+    monkeypatch.setattr(p, "search_best_surrogate", fake_search_best_surrogate)
+    monkeypatch.setattr(p, "_fit_acceptor", lambda *args, **kwargs: None)
+
+    X = np.zeros((20, 2), dtype=np.float32)
+    y_tr = np.array([0] * 18 + [1, 1], dtype=int)
+    y_val = y_tr.copy()
+    y_cal = np.array([0] * 18 + [1, 0], dtype=int)
+
+    global_stage = p._build_accepting_stage(
+        X, y_tr, X, y_val, X, y_cal, 0.90, "stage_1",
+        per_class_thresholds=False,
+    )
+    per_class_stage = p._build_accepting_stage(
+        X, y_tr, X, y_val, X, y_cal, 0.90, "stage_1",
+        per_class_thresholds=True,
+    )
+
+    assert global_stage is not None
+    assert per_class_stage is not None
+    assert global_stage["threshold"] == pytest.approx(0.80)
+
+    _, global_accept, _ = p.apply_stage(global_stage, X)
+    assert global_accept.all()
+
+    assert per_class_stage["per_class_thresholds"][0] == pytest.approx(0.82)
+    assert per_class_stage["per_class_thresholds"][1] == pytest.approx(0.81)
+    assert per_class_stage["teacher_agreement_cal"] == pytest.approx(1.0)
+    assert per_class_stage["coverage_cal"] == pytest.approx(19 / 20)
+
+    _, per_class_accept, _ = p.apply_stage(per_class_stage, X)
+    assert per_class_accept.sum() == 19
+    assert not per_class_accept[-1]
+
+
 # ── Report ────────────────────────────────────────────────────────────────────
 
 def test_report():
