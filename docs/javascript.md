@@ -121,7 +121,7 @@ async function route(text) {
 }
 ```
 
-The embedding API call is cheap (fractions of a cent). The TRACER HTTP call is local and sub-millisecond. You only pay the full LLM cost on deferred inputs.
+The embedding API call is cheap (fractions of a cent). The TRACER HTTP classifier call is local and sub-millisecond; if you embed live at request time, add that encoder latency to the end-to-end budget. You only pay the full LLM cost on deferred inputs.
 
 **Batch prediction:**
 
