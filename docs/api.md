@@ -436,6 +436,7 @@ class FitConfig:
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
     seed: int = 42
+    per_class_thresholds: bool = False
 ```
 
 | Field | Description |
@@ -445,6 +446,7 @@ class FitConfig:
 | `min_deploy_coverage` | Minimum coverage fraction to consider a method deployable. |
 | `max_fit_labels` | Subsample to this size for efficiency on large datasets (stratified). |
 | `seed` | Random seed for reproducibility. |
+| `per_class_thresholds` | Calibrate separate accept thresholds per predicted class. Useful for imbalanced multi-class tasks. |
 
 **Example:**
 
@@ -452,6 +454,7 @@ class FitConfig:
 config = tracer.FitConfig(
     target_teacher_agreement=0.95,        # 95% parity required
     frontier_targets=(0.90, 0.95, 0.99),  # explore these targets
+    per_class_thresholds=True,            # protect minority classes
 )
 result = tracer.fit("traces.jsonl", config=config)
 ```

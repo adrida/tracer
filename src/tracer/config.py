@@ -27,6 +27,10 @@ class FitConfig:
     max_fit_labels: int = 8_000
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     seed: int = 42
+    # Calibrate a separate accept threshold per predicted class. This is more
+    # conservative on imbalanced multi-class tasks because a minority class
+    # cannot be masked by majority-class agreement.
+    per_class_thresholds: bool = False
     # Emit per-candidate + per-stage progress to stderr during fit. Disable
     # for quiet notebook / CI runs.
     verbose: bool = True

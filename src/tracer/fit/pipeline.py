@@ -123,6 +123,15 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta):
     return chosen
 
 
+def _calibrate_per_class(scores, preds, y_teacher, target_ta):
+    thresholds = {}
+    for cls in np.unique(preds):
+        mask = preds == cls
+        ti = _calibrate_threshold(scores[mask], preds[mask], y_teacher[mask], target_ta)
+        thresholds[int(cls)] = float(ti["threshold"]) if ti is not None else float("inf")
+    return thresholds
+
+
 def _predict(clf, X):
     probs = clf.predict_proba(X)
     preds = probs.argmax(axis=1).astype(int)
@@ -130,7 +139,7 @@ def _predict(clf, X):
 
 
 def build_global(split, target_ta, log: Optional[LogFn] = None,
-                 skip: Iterable[str] = ()):
+                 skip: Iterable[str] = (), per_class_thresholds: bool = False):
     """Global pipeline: one surrogate, accept all if TA >= target."""
     log = log or _noop_log
     if len(np.unique(split["y_train"])) < 2 or len(split["X_val"]) == 0:
@@ -170,8 +179,22 @@ def _candidate_log(log: LogFn) -> Callable[..., None]:
     return _cb
 
 
+def _apply_stage_thresholds(stage: dict, preds: np.ndarray, scores: np.ndarray) -> np.ndarray:
+    if stage.get("accept_all"):
+        return np.ones(len(scores), dtype=bool)
+    per_class_thresholds = stage.get("per_class_thresholds")
+    if per_class_thresholds is not None:
+        return np.array(
+            [scores[i] >= per_class_thresholds.get(int(preds[i]), float("inf"))
+             for i in range(len(scores))],
+            dtype=bool,
+        )
+    return scores >= stage["threshold"]
+
+
 def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, stage_name,
-                           log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                           log: Optional[LogFn] = None, skip: Iterable[str] = (),
+                           per_class_thresholds: bool = False):
     log = log or _noop_log
     if len(np.unique(y_tr)) < 2 or len(X_val) == 0 or len(X_cal) == 0:
         return None
@@ -184,27 +207,37 @@ def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, st
     preds_cal, probs_cal = _predict(clf, X_cal)
     acceptor = _fit_acceptor(probs_val, preds_val, y_val)
     scores_cal = _accept_scores(acceptor, probs_cal)
-    ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta)
-    if ti is None:
-        return None
-    return {"stage_name": stage_name, "model_name": name, "clf": clf,
-            "acceptor": acceptor, "accept_all": False, "threshold": ti["threshold"],
-            "score_name": "predicted_teacher_match" if acceptor else "max_prob",
-            "teacher_agreement_cal": ti["teacher_agreement"],
-            "coverage_cal": ti["coverage"],
-            "val_teacher_f1": val_m["teacher_f1"],
-            "val_teacher_acc": val_m["teacher_acc"]}
+    stage = {"stage_name": stage_name, "model_name": name, "clf": clf,
+             "acceptor": acceptor, "accept_all": False,
+             "score_name": "predicted_teacher_match" if acceptor else "max_prob",
+             "val_teacher_f1": val_m["teacher_f1"],
+             "val_teacher_acc": val_m["teacher_acc"]}
+    if per_class_thresholds:
+        thresholds = _calibrate_per_class(scores_cal, preds_cal, y_cal, target_ta)
+        stage["per_class_thresholds"] = thresholds
+    else:
+        ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta)
+        if ti is None:
+            return None
+        stage["threshold"] = ti["threshold"]
+
+    accept_cal = _apply_stage_thresholds(stage, preds_cal, scores_cal)
+    stage["teacher_agreement_cal"] = (
+        float((preds_cal[accept_cal] == y_cal[accept_cal]).mean()) if accept_cal.any() else 0.0
+    )
+    stage["coverage_cal"] = float(accept_cal.mean())
+    return stage
 
 
 def build_l2d(split, target_ta, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (), per_class_thresholds: bool = False):
     """L2D: surrogate + acceptor-gated deferral."""
     log = log or _noop_log
     log(f"build_l2d: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        log=log, skip=skip)
+        log=log, skip=skip, per_class_thresholds=per_class_thresholds)
     if s1 is None:
         return {"method": "l2d", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -218,14 +251,14 @@ def build_l2d(split, target_ta, log: Optional[LogFn] = None,
 
 
 def build_rsb(split, target_ta, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (), per_class_thresholds: bool = False):
     """RSB: residual two-stage cascade."""
     log = log or _noop_log
     log(f"build_rsb: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        log=log, skip=skip)
+        log=log, skip=skip, per_class_thresholds=per_class_thresholds)
     if s1 is None:
         return {"method": "rsb", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -242,7 +275,7 @@ def build_rsb(split, target_ta, log: Optional[LogFn] = None,
             split["X_val"][rej_val], split["y_val"][rej_val],
             split["X_cal"][rej_cal], split["y_cal"][rej_cal],
             target_ta, "stage_2",
-            log=log, skip=skip)
+            log=log, skip=skip, per_class_thresholds=per_class_thresholds)
         if s2 is not None:
             stages.append(s2)
 
@@ -263,10 +296,8 @@ def build_rsb(split, target_ta, log: Optional[LogFn] = None,
 def apply_stage(stage: dict, X: np.ndarray):
     """Apply a single stage: returns (preds, accept_mask, scores)."""
     preds, probs = _predict(stage["clf"], X)
-    if stage.get("accept_all"):
-        return preds, np.ones(len(X), dtype=bool), np.ones(len(X))
     scores = _accept_scores(stage.get("acceptor"), probs)
-    accept = scores >= stage["threshold"]
+    accept = _apply_stage_thresholds(stage, preds, scores)
     return preds, accept, scores
 
 
@@ -321,7 +352,8 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
 
 
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
-                 log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                 log: Optional[LogFn] = None, skip: Iterable[str] = (),
+                 per_class_thresholds: bool = False):
     """Build global/l2d/rsb for each target TA, return best per target."""
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
@@ -337,7 +369,10 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
     for target in sorted(set(float(t) for t in targets)):
         candidates = []
         for method_name, builder in builders.items():
-            pipeline = builder(split, target, log=log, skip=skip)
+            pipeline = builder(
+                split, target, log=log, skip=skip,
+                per_class_thresholds=per_class_thresholds,
+            )
             pipeline["summary"]["method"] = method_name
             if pipeline["summary"].get("coverage_cal_total", 0.0) < min_coverage:
                 if pipeline["summary"].get("status") == "ok":

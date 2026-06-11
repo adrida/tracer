@@ -170,6 +170,7 @@ def fit(
         "min_deploy_coverage": config.min_deploy_coverage,
         "max_fit_labels": config.max_fit_labels,
         "seed": config.seed,
+        "per_class_thresholds": config.per_class_thresholds,
     }, indent=2), encoding="utf-8")
 
     # Save frontier summary
