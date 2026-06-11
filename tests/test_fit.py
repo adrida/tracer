@@ -437,6 +437,36 @@ def test_fitconfig_accepts_valid_config():
     FitConfig(target_teacher_agreement=0.95)
 
 
+def test_fitconfig_seed_affects_splits():
+    """FitConfig.seed must propagate: different seeds → different splits."""
+    from tracer.fit.pipeline import _split_buffer
+    rng = np.random.RandomState(0)
+    X = rng.randn(200, 16).astype(np.float32)
+    y = rng.randint(0, 4, size=200)
+
+    split_a = _split_buffer(X, y, seed=1)
+    split_b = _split_buffer(X, y, seed=999)
+
+    # Different seeds must produce different train sets
+    assert not np.array_equal(split_a["X_train"], split_b["X_train"]), \
+        "Different seeds should produce different training splits"
+
+
+def test_fit_frontier_seed_propagates():
+    """fit_frontier() must forward seed to _subsample and _split_buffer."""
+    from tracer.fit.pipeline import fit_frontier
+    rng = np.random.RandomState(0)
+    X = rng.randn(200, 16).astype(np.float32)
+    y = rng.randint(0, 4, size=200)
+
+    _, split_a = fit_frontier(X, y, targets=(0.90,), seed=1,
+                              skip=("gbt", "xgb"))
+    _, split_b = fit_frontier(X, y, targets=(0.90,), seed=999,
+                              skip=("gbt", "xgb"))
+    assert not np.array_equal(split_a["X_train"], split_b["X_train"]), \
+        "fit_frontier should forward seed so different seeds produce different splits"
+
+
 def test_embeddingconfig_rejects_nonpositive_batch_size():
     from tracer.config import EmbeddingConfig
     with pytest.raises(ValueError):
