@@ -104,12 +104,14 @@ def test_load_traces_missing_fields_raises():
 def test_fit_and_route():
     from tracer.api import fit, load_router
     with tempfile.TemporaryDirectory() as tmp:
-        path, X, _ = _make_traces(tmp)
+        # Clean, well-separated traces so the honest parity gate certifies a
+        # deployment. Noisy small sets now correctly refuse (see test_gate).
+        path, X, _ = _make_traces(tmp, n=600, noise=0.0)
         artifact_dir = Path(tmp) / ".tracer"
 
         result = fit(path, artifact_dir=artifact_dir)
 
-        assert result.manifest.n_traces == 300
+        assert result.manifest.n_traces == 600
         assert result.manifest.embedding_dim == 32
         assert len(result.manifest.label_space) == 4
         assert (artifact_dir / "manifest.json").exists()
