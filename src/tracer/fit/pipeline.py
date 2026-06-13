@@ -167,7 +167,18 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
     s_sel, p_sel, y_sel = scores[sel], preds[sel], y_teacher[sel]
     s_ver, p_ver, y_ver = scores[ver], preds[ver], y_teacher[ver]
 
-    chosen_t, best_cov = None, -1.0
+    # Candidate thresholds that clear the target on the selection split, ordered
+    # by coverage (highest first, i.e. lowest threshold). The earlier version
+    # kept only the single highest-coverage candidate and returned None if that
+    # one threshold failed held-out verification. Because the highest-coverage
+    # threshold is also the most aggressive (least likely to generalise), that
+    # made coverage non-monotonic in target: a stricter target was forced onto
+    # a more conservative, better-generalising threshold and could deploy MORE
+    # coverage than a looser target deployed (banking77: 0% @0.90 but 87% @0.95).
+    # Instead, verify candidates in coverage order and take the highest-coverage
+    # threshold that ALSO clears target on the held-out split. Same CP maths,
+    # same held-out honesty, but the gate no longer quits after one failure.
+    candidates = []
     for t in np.unique(np.sort(s_sel)):
         acc = s_sel >= t
         n_acc = int(acc.sum())
@@ -176,25 +187,26 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
         k_acc = int((p_sel[acc] == y_sel[acc]).sum())
         if _cp_lower(k_acc, n_acc, alpha) < target_ta:
             continue
-        cov = float(acc.mean())
-        if cov > best_cov:
-            best_cov, chosen_t = cov, float(t)
-    if chosen_t is None:
+        candidates.append((float(acc.mean()), float(t)))
+    if not candidates:
         return None
+    candidates.sort(reverse=True)  # highest coverage (lowest threshold) first
 
-    acc_v = s_ver >= chosen_t
-    n_v = int(acc_v.sum())
-    if n_v < min_accept:
-        return None
-    k_v = int((p_ver[acc_v] == y_ver[acc_v]).sum())
-    lower_v = _cp_lower(k_v, n_v, alpha)
-    if lower_v < target_ta:
-        return None
-    return {"threshold": chosen_t,
-            "teacher_agreement": float(k_v / n_v),
-            "teacher_agreement_lower": float(lower_v),
-            "coverage": float(acc_v.mean()),
-            "holdout": holdout}
+    for _cov, t in candidates:
+        acc_v = s_ver >= t
+        n_v = int(acc_v.sum())
+        if n_v < min_accept:
+            continue
+        k_v = int((p_ver[acc_v] == y_ver[acc_v]).sum())
+        lower_v = _cp_lower(k_v, n_v, alpha)
+        if lower_v < target_ta:
+            continue
+        return {"threshold": float(t),
+                "teacher_agreement": float(k_v / n_v),
+                "teacher_agreement_lower": float(lower_v),
+                "coverage": float(acc_v.mean()),
+                "holdout": holdout}
+    return None
 
 
 def _predict(clf, X):
