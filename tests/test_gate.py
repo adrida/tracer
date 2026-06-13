@@ -47,3 +47,26 @@ def test_nan_probs_do_not_crash_acceptor():
     assert np.isfinite(feats).all()
     # must not raise
     _fit_acceptor(probs, np.array([0, 1, 0, 1]), np.array([0, 0, 0, 1]))
+
+
+def test_routing_robust_to_extreme_ood_inputs():
+    """Out-of-distribution / extreme embeddings must route without crashing and
+    produce finite accept scores. (The OSS library defers via the acceptor
+    threshold; it does not ship a separate distance-based OOD gate, which lives
+    in the hosted gateway.)"""
+    from tracer.fit.pipeline import build_l2d, apply_stage
+    split = _make_split(800, 3.0)
+    res = build_l2d(split, target_ta=0.9, alpha=0.1)
+    if not res["stages"]:
+        import pytest
+        pytest.skip("no stage certified on this split")
+    stage = res["stages"][0]
+    d = split["X_cal"].shape[1]
+    X = np.vstack([
+        split["X_cal"][:5],                  # in-domain
+        np.full((3, d), 1e6, dtype=float),   # extreme, far OOD
+        np.full((2, d), -1e6, dtype=float),  # extreme, opposite direction
+    ]).astype(np.float32)
+    preds, accept, scores = apply_stage(stage, X)
+    assert accept.shape == (X.shape[0],) and accept.dtype == bool
+    assert np.isfinite(scores).all()         # no NaN scores leak through
