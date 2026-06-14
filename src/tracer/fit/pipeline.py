@@ -29,7 +29,7 @@ def _noop_log(_msg: str) -> None:
 def _cp_lower(k: int, n: int, alpha: float) -> float:
     """Exact (Clopper-Pearson) lower confidence bound on a binomial rate.
 
-    Used to gate deployment on an honest bound rather than a point estimate, so
+    Used to gate deployment on a held-out lower bound rather than a point estimate, so
     a small or lucky accepted set cannot 'scrape' the target agreement.
     """
     if n == 0 or k == 0:
@@ -141,17 +141,17 @@ def _accept_scores(acceptor, probs):
 
 
 def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_accept=10):
-    """Choose the accept threshold honestly, then check it generalises.
+    """Choose the accept threshold on a held-out lower bound, then check it generalises.
 
     Earlier iterations sat at two extremes. The original gate selected the
     threshold and reported its agreement on the *same* calibration set (in-sample
     point estimate), so a threshold could clear target by luck and break the
     contract on real traffic. The next version held out 50% for a Clopper-Pearson
-    verification, which is provably honest but so data-hungry that on a few-hundred
+    verification, which is provably valid (distribution-free) but so data-hungry that on a few-hundred
     calibration rows it certified NOTHING at strict targets (banking77 0% @0.98)
     even though the confidence ranking clearly supported partial coverage.
 
-    This is the hybrid that keeps honesty while recovering that coverage:
+    This is the hybrid that keeps the held-out guarantee while recovering that coverage:
 
       1. Select on a 70% slice: among thresholds whose Clopper-Pearson LOWER bound
          on accepted agreement clears target, take the highest-coverage one
@@ -165,7 +165,7 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
          that survives the held-out check, so coverage is monotonic in target.
 
     On very little data (n < 40) there is nothing to hold out, so it falls back to
-    a single-set Clopper-Pearson lower-bound gate (still honest, just not held-out)
+    a single-set Clopper-Pearson lower-bound gate (still a valid lower bound, just not held-out)
     and flags it. Validated across seeds and datasets at 0.90-0.98 with zero
     held-out contract violations.
     """
@@ -219,7 +219,7 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
         if (k_v / n_v) < target_ta:                  # held-out generalisation check
             continue
         # Report the CP lower bound on the full accepted set (all calibration rows
-        # at this threshold) as the honest deployable bound.
+        # at this threshold) as the deployable lower bound.
         acc_all = scores >= t
         n_all = int(acc_all.sum())
         k_all = int((preds[acc_all] == y_teacher[acc_all]).sum())
@@ -447,7 +447,7 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
 
     `alpha` is the confidence level for the deployment lower bound: a candidate
     is only certified if the lower bound on its held-out teacher agreement clears
-    the target, so reported coverage is honest rather than in-sample-optimistic.
+    the target, so reported coverage reflects a held-out lower bound rather than an in-sample point estimate.
     """
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "

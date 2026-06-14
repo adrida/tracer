@@ -48,7 +48,7 @@ set) reports a lower `coverage_cal` than the previous run at the same
 **Why.** This is expected, not a regression. TRACER holds parity fixed and lets
 coverage float. When new traffic is harder, more diverse, noisier, or introduces
 labels the surrogate has not seen, the only way to keep matching the teacher at
-your target is to defer more inputs. Coverage falls so that parity stays honest.
+your target is to defer more inputs. Coverage falls so that the parity bound still holds.
 
 **Fix.** Usually nothing: a lower coverage at the same parity is the system
 adapting correctly. To understand the change:

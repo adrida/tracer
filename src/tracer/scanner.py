@@ -1,6 +1,6 @@
 """tracer scan: the day-one verdict on a traces file.
 
-Answers three questions in one pass, honestly:
+Answers three questions in one pass:
   1. How much of this traffic is predictable enough for a near-free model?
      (certifiable share, measured with exact binomial bounds on HELD-OUT
      data, never in-sample)
@@ -159,7 +159,7 @@ def scan(
 ) -> ScanResult:
     """Run the scan. Returns a ScanResult; use format_scan / scan_html to render.
 
-    Honesty contract: every certifiable claim is an exact binomial lower
+    Certification contract: every certifiable claim is an exact binomial lower
     bound computed on a held-out 30% slice the clustering never saw.
 
     force: on thin data a cluster may not have enough held-out members for any
