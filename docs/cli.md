@@ -9,6 +9,7 @@ tracer <command> [options]
 | Command | What it does |
 |---------|-------------|
 | `tracer demo` | Zero-setup demo with Banking77 data |
+| `tracer scan` | Day-one read: how much traffic is certifiably routable, with a 3D map |
 | `tracer fit` | Fit a routing policy from your traces |
 | `tracer update` | Refit with new traces (continual learning) |
 | `tracer report` | Print the policy manifest as JSON |
@@ -49,6 +50,81 @@ tracer-demo-output/
     report.html
     ...
 ```
+
+---
+
+## `tracer scan`
+
+The fast, conservative first look at a traces file. It groups your traffic by
+similarity and, on a held-out slice the grouping never saw, measures how much of
+it a near-free model can answer at your target agreement, using exact binomial
+(held-out, never in-sample) bounds. It does not train a router; `tracer fit`
+does that and certifies more of the same traffic.
+
+```bash
+tracer scan <traces> [--target <float>] [--html <path>] [options]
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `traces` | required | Path to traces JSONL file |
+| `--target` | `0.90` | Target label agreement to certify against |
+| `--teacher-price-per-1k` | none | Your teacher cost per 1k calls, to estimate savings |
+| `--monthly-calls` | none | Monthly call volume, to project monthly savings |
+| `--html` | none | Also write a self-contained HTML report (3D embedding map) |
+| `--no-open` | off | Don't open the HTML report in a browser |
+| `--embed-model` | `all-MiniLM-L6-v2` | Local sentence-transformers model for embeddings |
+| `--embeddings` | none | Path to a precomputed embeddings `.npy` (skip embedding) |
+| `--embed-url` | none | Use your own HTTP embedding endpoint instead of a local model |
+| `--embed-header` | none | Header for `--embed-url`, repeatable (e.g. `'Authorization: Bearer ...'`) |
+| `--embed-input-key` / `--embed-output-key` | `input` / `embedding` | Request/response JSON keys for the custom endpoint |
+| `--embed-batch-key` | none | Send all texts in one request under this key (batch endpoints) |
+| `--viz-layout` | `pca` | 3D layout for the report: `pca` (dense connected cloud), `umap`, `tsne`, or `auto`. `umap` needs `umap-learn` installed |
+| `--force` | off | Scan thin data anyway (see below) |
+
+**Data volume.** The scan needs about **1,000 traces** for a stable read, and
+around **5,000** is the sweet spot where each cell carries enough held-out
+examples to certify at 0.90. Below 1,000 traces it stops and asks you to collect
+more, unless you pass `--force`, which coarsens the grouping to concentrate the
+held-out evidence and reports a best-effort floor (not a guarantee), and says so
+loudly.
+
+**Embeddings.** By default scan computes embeddings **locally with
+sentence-transformers** (`pip install tracer-llm[embeddings]`; pick the model with
+`--embed-model`). You can instead:
+- reuse a precomputed matrix with `--embeddings path.npy`, or
+- call **your own embedding service** with `--embed-url` (any HTTP endpoint that
+  takes JSON and returns a vector; pass auth with `--embed-header`, and the
+  `--embed-input-key`/`--embed-output-key`/`--embed-batch-key` flags adapt it to
+  OpenAI-compatible or custom response shapes). No vendor is assumed or required.
+
+**Examples:**
+
+```bash
+# Local embeddings, write and open the HTML report
+tracer scan traces.jsonl --html scan.html
+
+# Estimate savings at your teacher price and volume
+tracer scan traces.jsonl --teacher-price-per-1k 5.0 --monthly-calls 3000000
+
+# Read a thin sample anyway (best-effort floor, with a warning)
+tracer scan small.jsonl --force
+
+# Use your own embedding service instead of a local model
+tracer scan traces.jsonl --embed-url https://my-embeddings.internal/embed \
+    --embed-header 'Authorization: Bearer $TOKEN'
+
+# Reuse precomputed embeddings
+tracer scan traces.jsonl --embeddings traces.npy
+```
+
+The **HTML report** shows the headline certifiable share, per-cell verdicts and
+proven match rates, an estimated saving, and an interactive 3D map of the
+embedding space. Each dot is one request; hover a cell to inspect it, and use the
+**Colour by: Verdict / Label** toggle to switch between the free-vs-kept colouring
+and a per-label palette.
 
 ---
 

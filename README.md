@@ -153,10 +153,13 @@ X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 | Command | What it does |
 |---------|-------------|
 | `tracer demo` | Zero-setup demo on real data |
+| `tracer scan traces.jsonl --html scan.html` | Day-one read: how much traffic is certifiably routable, with a 3D map |
 | `tracer fit traces.jsonl --target 0.95` | Fit a routing policy |
 | `tracer update new_traces.jsonl` | Refit with new traces |
 | `tracer report-html` | Open the HTML audit report |
 | `tracer serve .tracer --port 8000` | HTTP prediction server |
+
+`tracer scan` is the fast, conservative first look (similarity grouping plus exact held-out bounds, no training). It needs about 1,000 traces and works best around 5,000; below 1,000 it asks you to collect more, or pass `--force` for a best-effort floor. Embeddings are computed locally by default (sentence-transformers), or point it at your own embedding service with `--embed-url`. `tracer fit` then trains the real router and certifies more of the same traffic. The HTML report includes an interactive 3D map of your embedding space with a verdict/label colour toggle. See the [CLI reference](docs/cli.md) for every flag.
 
 ## What's in `.tracer/`
 

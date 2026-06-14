@@ -5,6 +5,7 @@ replace teacher calls -- with formal guarantees and qualitative audit.
 """
 
 from tracer.api import fit, report, load_router, update
+from tracer.scanner import scan
 from tracer.analysis.html_report import generate_html_report
 from tracer.analysis.sankey import generate_sankey
 from tracer.runtime.serve import serve
@@ -26,6 +27,7 @@ __version__ = "0.1.3"
 
 __all__ = [
     # Core API
+    "scan",
     "fit",
     "update",
     "load_router",

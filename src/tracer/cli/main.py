@@ -17,6 +17,82 @@ import textwrap
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _cmd_scan(args):
+    from tracer.scanner import (
+        scan, format_scan, scan_html, load_scan_traces,
+        MIN_SCAN_TRACES, SUGGESTED_SCAN_TRACES,
+    )
+    from tracer.cli._ui import header, step, warn, info
+
+    header("scan", f"traces={args.traces}  target={args.target:.0%}")
+
+    # Data-volume gate (checked before the embedding step).
+    n_traces = len(load_scan_traces(args.traces)[0])
+    if n_traces < MIN_SCAN_TRACES and not args.force:
+        warn(f"Only {n_traces:,} traces. tracer scan needs at least "
+             f"{MIN_SCAN_TRACES:,} for a stable read, and ~{SUGGESTED_SCAN_TRACES:,} "
+             f"is the sweet spot.")
+        info("Collect more traces, or re-run with --force to scan anyway on thin "
+             "data (results will be a best-effort floor, not a guarantee).")
+        sys.exit(1)
+    if args.force:
+        warn("--force: bypassing the thin-data guard. Clustering will be coarsened to "
+             "concentrate held-out evidence; reported bounds are a best-effort floor, "
+             "not a guarantee.")
+        if n_traces < MIN_SCAN_TRACES:
+            info(f"{n_traces:,} traces is below the {MIN_SCAN_TRACES:,} floor; "
+                 f"~{SUGGESTED_SCAN_TRACES:,} is the sweet spot for a real verdict.")
+
+    # Embeddings. Default: sentence-transformers locally (the model below).
+    # --embeddings reuses a precomputed .npy; --embed-url calls your own HTTP
+    # embedding service (any endpoint, e.g. OpenAI-compatible), no vendor lock-in.
+    embeddings = None
+    if args.embeddings:
+        import numpy as _np
+        embeddings = _np.load(args.embeddings)
+    elif args.embed_url:
+        from tracer.embeddings.embedder import Embedder
+        headers = {}
+        for h in (args.embed_header or []):
+            k, _, v = h.partition(":")
+            headers[k.strip()] = v.strip()
+        texts, _ = load_scan_traces(args.traces)
+        try:
+            with step(f"Embedding {len(texts)} traces via {args.embed_url}"):
+                embeddings = Embedder.from_endpoint(
+                    args.embed_url, headers=headers or None,
+                    input_key=args.embed_input_key, output_key=args.embed_output_key,
+                    batch_key=args.embed_batch_key,
+                ).embed(texts)
+        except Exception as e:
+            warn(f"Embedding endpoint failed ({args.embed_url}): {e}")
+            info("Check the URL, --embed-header auth, and the "
+                 "--embed-input-key/--embed-output-key for your endpoint's shape.")
+            sys.exit(1)
+
+    with step("Clustering + exact bounds"):
+        result = scan(
+            args.traces,
+            target=args.target,
+            embeddings=embeddings,
+            model=args.embed_model,
+            teacher_price_per_1k=args.teacher_price_per_1k,
+            monthly_calls=args.monthly_calls,
+            viz_layout=args.viz_layout,
+            force=args.force,
+        )
+    print(format_scan(result))
+    if args.html:
+        import pathlib
+        out = pathlib.Path(args.html)
+        out.write_text(scan_html(result, source_name=pathlib.Path(args.traces).name),
+                       encoding="utf-8")
+        print(f"\nHTML report written to {out}")
+        if not args.no_open:
+            import webbrowser
+            webbrowser.open(out.resolve().as_uri())
+
+
 def _cmd_fit(args):
     from tracer.api import fit
     from tracer.config import FitConfig
@@ -526,6 +602,50 @@ def main():
 
     sub.add_parser("demo", help="Zero-setup demo with synthetic data")
 
+    p_scan = sub.add_parser(
+        "scan",
+        help="Day-one verdict: how much traffic is certifiably ML-shaped, with a 3D map")
+    p_scan.add_argument("traces", help="Path to traces JSONL file")
+    p_scan.add_argument("--target", type=float, default=0.90,
+                        help="Target label-agreement to certify against (default: 0.90)")
+    p_scan.add_argument("--teacher-price-per-1k", type=float, default=None,
+                        help="Your teacher $ per 1k calls, to estimate savings")
+    p_scan.add_argument("--monthly-calls", type=int, default=None,
+                        help="Monthly call volume, to project monthly savings")
+    p_scan.add_argument("--html", default=None,
+                        help="Also write a self-contained HTML report to this path")
+    p_scan.add_argument("--no-open", action="store_true",
+                        help="Don't open the HTML report in a browser")
+    # Embeddings: local sentence-transformers by default; precomputed .npy or a
+    # custom HTTP endpoint optional.
+    p_scan.add_argument("--embed-model", default="all-MiniLM-L6-v2",
+                        help="Local sentence-transformers model for embeddings "
+                             "(default: all-MiniLM-L6-v2). Needs tracer-llm[embeddings].")
+    p_scan.add_argument("--embeddings", default=None,
+                        help="Path to a precomputed embeddings .npy (skip embedding).")
+    p_scan.add_argument("--embed-url", default=None,
+                        help="Use your own HTTP embedding endpoint instead of a local "
+                             "model. POSTs JSON and reads the embedding from the response.")
+    p_scan.add_argument("--embed-header", action="append", default=None, metavar="K: V",
+                        help="Header for --embed-url (repeatable), e.g. "
+                             "--embed-header 'Authorization: Bearer ...'")
+    p_scan.add_argument("--embed-input-key", default="input",
+                        help="Request JSON key for the text (default: input)")
+    p_scan.add_argument("--embed-output-key", default="embedding",
+                        help="Response JSON key for the vector (default: embedding)")
+    p_scan.add_argument("--embed-batch-key", default=None,
+                        help="If set, send all texts in one request under this key "
+                             "(for batch endpoints).")
+    p_scan.add_argument("--viz-layout", default="pca",
+                        choices=["pca", "umap", "tsne", "auto"],
+                        help="3D layout for the HTML report. pca (default) is a dense "
+                             "connected cloud; umap/tsne separate many-class data into "
+                             "distinct clouds (umap needs umap-learn installed).")
+    p_scan.add_argument("--force", action="store_true",
+                        help="Scan thin data anyway (< 1,000 traces). Coarsens the "
+                             "clustering to concentrate held-out evidence and reports a "
+                             "best-effort floor, not a guarantee. Warns loudly.")
+
     p_fit = sub.add_parser("fit", help="Fit a routing policy from traces")
     p_fit.add_argument("traces", help="Path to traces JSONL file")
     p_fit.add_argument("--artifact-dir", default=".tracer",
@@ -571,6 +691,7 @@ def main():
     args = parser.parse_args()
 
     dispatch = {
+        "scan":        _cmd_scan,
         "fit":         _cmd_fit,
         "report":      _cmd_report,
         "report-html": _cmd_report_html,

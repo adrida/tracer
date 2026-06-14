@@ -1,5 +1,47 @@
 # Python API Reference
 
+## `tracer.scan()`
+
+Run the day-one scan: group traffic by similarity and measure, on a held-out
+slice, how much is certifiably answerable by a near-free model at your target.
+Returns a `ScanResult`; render it with `tracer.scanner.format_scan` (terminal) or
+`tracer.scanner.scan_html` (HTML report). This is the conservative first look;
+`tracer.fit()` trains the real router.
+
+```python
+tracer.scan(
+    traces_path,
+    target=0.90,
+    embeddings=None,
+    model="all-MiniLM-L6-v2",
+    teacher_price_per_1k=None,
+    monthly_calls=None,
+    viz_layout="pca",
+    force=False,
+) -> ScanResult
+```
+
+**Parameters:**
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `traces_path` | `str \| Path` | required | Path to traces JSONL file |
+| `target` | `float` | `0.90` | Target label agreement to certify against |
+| `embeddings` | `np.ndarray \| None` | `None` | Precomputed embeddings `(n, dim)`; computed locally from text if omitted |
+| `model` | `str` | `"all-MiniLM-L6-v2"` | Local sentence-transformers model used when `embeddings` is omitted |
+| `teacher_price_per_1k` | `float \| None` | `None` | Teacher cost per 1k calls, to estimate savings |
+| `monthly_calls` | `int \| None` | `None` | Monthly volume, to project monthly savings |
+| `viz_layout` | `str` | `"pca"` | 3D layout for the HTML report (`pca`, `umap`, `tsne`, `auto`) |
+| `force` | `bool` | `False` | Scan thin data anyway (coarsens grouping, reports a best-effort floor) |
+
+**Raises:** `tracer.scanner.ThinDataError` when fewer than 1,000 traces are passed
+and `force=False`. About 5,000 traces is the sweet spot.
+
+**Returns:** `ScanResult` (fields include `certifiable_share`, `clusters`,
+`frontier`, `forced`, `savings_per_1k_calls`, `projection`).
+
+---
+
 ## `tracer.fit()`
 
 Fit a routing policy from traces and embeddings.
