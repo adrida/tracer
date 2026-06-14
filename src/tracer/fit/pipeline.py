@@ -166,7 +166,7 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
 
     On very little data (n < 40) there is nothing to hold out, so it falls back to
     a single-set Clopper-Pearson lower-bound gate (still honest, just not held-out)
-    and flags it. Validated across seeds on banking77/obside at 0.90-0.98 with zero
+    and flags it. Validated across seeds and datasets at 0.90-0.98 with zero
     held-out contract violations.
     """
     n = len(scores)
