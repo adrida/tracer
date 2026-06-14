@@ -149,6 +149,21 @@ def fit(
             accept_scores=scores,
             trace_ids=[r.trace_id for r in dataset.records])
         qual_path = save_qualitative_report(artifact_dir, qual_report)
+
+        # Distance-based OOD gate: calibrate kNN-distance thresholds (global +
+        # per predicted label) so the runtime can defer off-distribution inputs
+        # the parity gate never saw. Safety net, not the partition.
+        try:
+            from tracer.fit.ood import fit_ood_gate
+            pred_label_strs = [idx_to_label.get(int(p), "?") for p in preds]
+            ood_gate = fit_ood_gate(X, pred_label_strs)
+            if ood_gate is not None:
+                (artifact_dir / "ood.json").write_text(json.dumps(ood_gate))
+                notes.append(
+                    f"OOD gate calibrated (kNN dist, global thr={ood_gate['global_thr']:.3f}, "
+                    f"{len(ood_gate['per_label_thr'])} per-label)")
+        except Exception as _e:  # never let the safety net break a fit
+            notes.append(f"OOD gate skipped: {_e}")
     else:
         notes.append("No deployable pipeline met the target teacher-parity threshold.")
 
