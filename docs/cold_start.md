@@ -71,8 +71,7 @@ import tracer
 import numpy as np
 
 # Option A: sentence-transformers (local)
-embedder = tracer.embed.from_sentence_transformers("all-MiniLM-L6-v2")
-X = embedder.encode([t["input"] for t in traces])
+X = tracer.embed([t["input"] for t in traces], model="all-MiniLM-L6-v2")
 np.save("traces.npy", X)
 
 # Option B: precomputed from your own embedding model

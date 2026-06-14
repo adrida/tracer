@@ -12,7 +12,7 @@ tracer <command> [options]
 | `tracer fit` | Fit a routing policy from your traces |
 | `tracer update` | Refit with new traces (continual learning) |
 | `tracer report` | Print the policy manifest as JSON |
-| `tracer report-html` | Generate an HTML audit report and open it |
+| `tracer report-html` | Generate an HTML report and open it |
 | `tracer sankey` | Generate a Sankey routing flow diagram |
 | `tracer serve` | Start a prediction HTTP server |
 
@@ -57,7 +57,7 @@ tracer-demo-output/
 Fit a routing policy from a JSONL traces file.
 
 ```bash
-tracer fit <traces> [--artifact-dir <dir>] [--target <float>]
+tracer fit <traces> [--artifact-dir <dir>] [--target <float>] [--trees] [--skip <models>]
 ```
 
 **Arguments:**
@@ -67,12 +67,21 @@ tracer fit <traces> [--artifact-dir <dir>] [--target <float>]
 | `traces` | required | Path to traces JSONL file |
 | `--artifact-dir` | `.tracer` | Where to save artifacts |
 | `--target` | `0.90` | Target teacher agreement (0.0–1.0) |
+| `--trees` | off | Add the tree-based surrogates (decision tree, random forest, extra-trees, gradient boosting). **Off by default** — they are slower and the linear + MLP heads are usually enough; turn them on for hard, high-class-count tasks. |
+| `--skip` | none | Comma-separated surrogate models to drop from the zoo (e.g. `mlp_1h,mlp_2h`). |
+
+The default zoo is lightweight (logistic regression, SGD, small MLPs) so a fit is fast. `--trees` adds the heavier tree models, which can lift coverage on difficult datasets (e.g. Banking77's 77 classes) at the cost of fit time.
+
+Trace files accept common key aliases: the input can be any of `input, query, text, prompt, question` and the label any of `teacher, teacher_output, label, intent, output, answer`.
 
 **Examples:**
 
 ```bash
-# Basic fit with 90% parity target
+# Basic fit with 90% parity target (lightweight zoo)
 tracer fit traces.jsonl
+
+# Add tree models for a hard, high-class-count task
+tracer fit traces.jsonl --trees
 
 # Stricter target, custom artifact dir
 tracer fit traces.jsonl --target 0.95 --artifact-dir my-policy
@@ -168,7 +177,7 @@ tracer report [<artifact-dir>]
 
 ## `tracer report-html`
 
-Generate a self-contained HTML audit report and open it in the browser.
+Generate a self-contained HTML report and open it in the browser.
 
 ```bash
 tracer report-html [<artifact-dir>] [--output <path>] [--no-open]
@@ -192,7 +201,7 @@ tracer report-html
 tracer report-html --no-open
 
 # Save to specific path
-tracer report-html --output /var/www/tracer-audit.html --no-open
+tracer report-html --output /var/www/tracer-report.html --no-open
 
 # Different artifact dir
 tracer report-html my-policy

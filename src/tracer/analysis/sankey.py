@@ -221,7 +221,7 @@ def generate_sankey_div(
     artifact_dir: Union[str, Path],
     top_k: int = 15,
 ) -> str:
-    """Return a self-contained HTML <div> with the Sankey chart embedded inline (dark theme).
+    """Return a self-contained HTML <div> with the Sankey chart embedded inline (light theme, matches the report).
 
     Suitable for injecting directly into the HTML report page.
     Requires plotly to be installed (pip install tracer-llm[viz]).
@@ -242,7 +242,7 @@ def generate_sankey_div(
     manifest = _json.loads(manifest_path.read_text())
     qr = _json.loads(qr_path.read_text())
 
-    fig = _build_sankey_figure(manifest, qr, top_k, dark=True)
+    fig = _build_sankey_figure(manifest, qr, top_k, dark=False)
     if fig is None:
         return ""
 

@@ -349,7 +349,7 @@ np.save("embeddings.npy", X)
 
 ## `tracer.generate_html_report()`
 
-Generate a self-contained HTML audit report from a `.tracer/` directory.
+Generate a self-contained HTML report from a `.tracer/` directory.
 
 ```python
 tracer.generate_html_report(

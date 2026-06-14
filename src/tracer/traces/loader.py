@@ -15,6 +15,10 @@ from typing import Union
 
 from tracer.types import TraceDataset, TraceRecord
 
+# Accepted key aliases (kept in sync with tracer.scanner). Canonical: input, teacher.
+_INPUT_KEYS = ("input", "query", "text", "prompt", "question")
+_LABEL_KEYS = ("teacher", "teacher_output", "label", "intent", "output", "answer")
+
 
 def load_traces(path: Union[str, Path]) -> TraceDataset:
     """Load a JSONL trace file into a TraceDataset."""
@@ -31,12 +35,18 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
                 raise ValueError(
                     f"Malformed JSON in {path} at line {len(records) + 1}: {exc}"
                 ) from exc
-            if "input" not in row or "teacher" not in row:
+            # Accept common key aliases so middleware dumps load without
+            # reshaping (mirrors the scan loader). Canonical keys are
+            # 'input' and 'teacher'.
+            input_key = next((k for k in _INPUT_KEYS if k in row), None)
+            label_key = next((k for k in _LABEL_KEYS if k in row), None)
+            if input_key is None or label_key is None:
                 raise ValueError(
-                    f"Trace at line {len(records) + 1} is missing required fields "
-                    f"'input' and/or 'teacher'. Got keys: {list(row.keys())}"
+                    f"Trace at line {len(records) + 1} is missing an input and/or "
+                    f"teacher field. Accepted input keys: {_INPUT_KEYS}; "
+                    f"teacher keys: {_LABEL_KEYS}. Got keys: {list(row.keys())}"
                 )
-            teacher_val = row["teacher"]
+            teacher_val = row[label_key]
             if teacher_val is None or (isinstance(teacher_val, float) and math.isnan(teacher_val)):
                 raise ValueError(
                     f"Trace at line {len(records) + 1} has a null/NaN 'teacher' field. "
@@ -46,7 +56,7 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
             if not isinstance(teacher_val, str):
                 teacher_val = str(teacher_val)
             records.append(TraceRecord(
-                input_text=str(row["input"]),
+                input_text=str(row[input_key]),
                 teacher_label=teacher_val,
                 trace_id=str(row["id"]) if row.get("id") is not None else None,
                 ground_truth=str(row["ground_truth"]) if row.get("ground_truth") is not None else None,

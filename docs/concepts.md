@@ -134,7 +134,7 @@ Coverage grows monotonically as more traces accumulate. Easy intents (tight embe
 
 ---
 
-## Qualitative audit
+## Qualitative report
 
 Every fit produces a structured explanation of the routing policy. The slice and boundary-pair design is informed by Slice Finder (Chung et al., [ICDE 2019](https://ieeexplore.ieee.org/document/8731353)) and the contrastive explanation literature (Miller, [AIJ 2019](https://www.sciencedirect.com/science/article/pii/S0004370217301126)).
 

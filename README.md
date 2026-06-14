@@ -95,7 +95,7 @@ User query → [Embedder] → [ML Surrogate] → [Acceptor Gate]
                                           (traditional ML)
 ```
 
-The surrogate is **not another LLM** - it is a classical ML or shallow DL model (the model zoo includes logistic regression, SGD, LightGBM, random forests, and small feed-forward nets). This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
+The surrogate is **not another LLM** - it is a classical ML or shallow DL model. By default the zoo is lightweight and fast (logistic regression, SGD, and small feed-forward nets); the tree-based models (decision tree, random forest, extra-trees, gradient boosting) are heavier and opt-in with `tracer fit --trees`. This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
 
 1. **Fit** - train a suite of candidate surrogates on your LLM's classification traces; select the best via cross-validated teacher agreement
 2. **Gate** - attach a learned acceptor that estimates, per-input, whether the surrogate will agree with the teacher
@@ -110,6 +110,8 @@ The surrogate is **not another LLM** - it is a classical ML or shallow DL model 
 | Teacher agreement (handled) | 96.1% |
 | End-to-end accuracy | 96.4% |
 | **Annual savings** (10k queries/day) | **$302,850** |
+
+_Banking77 is a 77-class task; the tree models help here, so these numbers are with `tracer fit --trees`. The lightweight default (linear + MLP) is faster and enough for most tasks._
 
 ## Continual learning flywheel
 
@@ -155,7 +157,7 @@ X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 | `tracer demo` | Zero-setup demo on real data |
 | `tracer fit traces.jsonl --target 0.95` | Fit a routing policy |
 | `tracer update new_traces.jsonl` | Refit with new traces |
-| `tracer report-html` | Open the HTML audit report |
+| `tracer report-html` | Open the HTML report |
 | `tracer serve .tracer --port 8000` | HTTP prediction server |
 
 ## What's in `.tracer/`
@@ -166,7 +168,7 @@ X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 | `pipeline.joblib` | Surrogate + acceptor + calibrated thresholds |
 | `frontier.json` | All candidates at each quality target |
 | `qualitative_report.json` | Per-label slices, boundary pairs, examples |
-| `report.html` | Visual audit report |
+| `report.html` | Visual HTML report |
 
 ## Install
 

@@ -25,9 +25,17 @@ def _cmd_fit(args):
     c = _C()
     header("fit", f"traces={args.traces}  target-TA={args.target:.0%}")
 
-    config = FitConfig(target_teacher_agreement=args.target)
+    # Tree surrogates (decision tree, random forest, extra-trees, gradient
+    # boosting) are heavy and off by default; --trees opts them back in, and
+    # --skip drops named candidates explicitly.
+    TREES = ("dt", "rf", "et", "gbt")
+    skip = {s.strip() for s in (args.skip or "").split(",") if s.strip()}
+    if not getattr(args, "trees", False):
+        skip |= set(TREES)
+    config = FitConfig(target_teacher_agreement=args.target,
+                       skip_candidates=tuple(sorted(skip)))
 
-    with step("Fitting routing policy (model zoo + calibration)"):
+    with step("Fitting routing policy (linear + MLP zoo + calibration)"):
         result = fit(args.traces, artifact_dir=args.artifact_dir, config=config)
 
     _print_fit_result(result)
@@ -532,6 +540,13 @@ def main():
                        help="Output artifact directory (default: .tracer)")
     p_fit.add_argument("--target", type=float, default=0.90,
                        help="Target teacher agreement, e.g. 0.90 (default)")
+    p_fit.add_argument("--trees", action="store_true",
+                       help="Add the tree-based surrogates (decision tree, random "
+                            "forest, extra-trees, gradient boosting). Off by default: "
+                            "they are slower and the linear/MLP heads are usually enough.")
+    p_fit.add_argument("--skip", default="",
+                       help="Comma-separated surrogate models to skip from the zoo "
+                            "(e.g. dt,rf,et,gbt,mlp_1h).")
 
     p_report = sub.add_parser("report", help="Show artifact manifest as JSON")
     p_report.add_argument("artifact_dir", nargs="?", default=".tracer")

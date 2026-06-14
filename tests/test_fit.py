@@ -95,7 +95,7 @@ def test_load_traces_missing_fields_raises():
         path = Path(tmp) / "missing.jsonl"
         with path.open("w") as f:
             f.write(json.dumps({"input": "hello"}) + "\n")  # missing 'teacher'
-        with pytest.raises(ValueError, match="missing required fields"):
+        with pytest.raises(ValueError, match="missing an input and/or teacher"):
             load_traces(path)
 
 

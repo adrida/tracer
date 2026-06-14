@@ -1,4 +1,4 @@
-"""Generate a self-contained HTML audit report from a .tracer/ artifact directory."""
+"""Generate a self-contained HTML report from a .tracer/ artifact directory."""
 
 from __future__ import annotations
 
@@ -131,6 +131,30 @@ tr:hover td { background: #1c2128; }
 .footer { margin-top: 48px; text-align: center; font-size: .78rem; color: #484f58; }
 .footer a { color: #58a6ff; text-decoration: none; }
 .footer a:hover { text-decoration: underline; }
+
+/* ── Tracer brand theme (light), overrides the dark defaults above ── */
+:root{--ink:#1c1917;--muted:#6b7280;--line:#e7e5e4;--soft:#f5f5f4;--green:#16a34a;--sky:#0ea5e9;--orange:#f97316;--red:#dc2626;--purple:#7c3aed}
+body{font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:var(--ink)}
+.logo{color:var(--ink);font-weight:800;letter-spacing:-0.01em;text-transform:none}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px}
+.bar-sep{color:var(--line)} .crumb{color:var(--muted);font-weight:600;font-size:.875rem}
+h1{color:var(--ink)} .subtitle{color:var(--muted);font-family:'JetBrains Mono',monospace}
+.card{background:#fff;border-color:var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card.green::before{background:var(--green)} .card.blue::before{background:var(--sky)} .card.purple::before{background:var(--purple)} .card.yellow::before{background:var(--orange)}
+.card-label{color:var(--muted)} .card-value{color:var(--ink)} .card-sub{color:var(--muted)}
+.card.green .card-value{color:var(--green)} .card.blue .card-value{color:var(--sky)} .card.purple .card-value{color:var(--purple)} .card.yellow .card-value{color:var(--orange)}
+.coverage-wrap,.section{background:#fff;border-color:var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.ring-stats h3,h2{color:var(--muted)} .ring-row{border-color:var(--line)} .ring-row-label{color:var(--ink)} .ring-row-val{color:var(--ink)}
+th{color:var(--muted);border-color:var(--line)} td{color:var(--ink);border-color:var(--line)} tr:hover td{background:var(--soft)}
+.bar-bg{background:var(--soft)} .bar-high{background:var(--green)} .bar-mid{background:var(--orange)} .bar-low{background:var(--red)}
+.b-green{background:#16a34a14;color:var(--green);border:1px solid #16a34a55} .b-blue{background:#0ea5e914;color:var(--sky);border:1px solid #0ea5e955} .b-purple{background:#7c3aed14;color:var(--purple);border:1px solid #7c3aed55} .b-gray{background:var(--soft);color:var(--muted);border:1px solid var(--line)}
+.search{background:#fff;border-color:var(--line);color:var(--ink);font-family:inherit} .search:focus{border-color:var(--sky)} .filter-count{color:var(--muted)}
+.pair{background:var(--soft);border-color:var(--line)} .pair-intent{color:var(--muted)} .pair-text{color:var(--ink)} .pair-score{color:var(--muted)}
+.pt-local{background:#16a34a14;color:var(--green);border:1px solid #16a34a55} .pt-deferred{background:#dc262614;color:var(--red);border:1px solid #dc262655}
+.ex-col h3{color:var(--muted)} .ex-item{background:var(--soft);border-color:var(--line)} .ex-item.handled{border-left:3px solid var(--green)} .ex-item.deferred{border-left:3px solid var(--red)}
+.ex-text{color:var(--ink)} .ex-label{background:#fff;border:1px solid var(--line);color:var(--muted)} .ex-score{color:var(--muted)}
+.delta-pos{color:var(--green)} .delta-neg{color:var(--red)} .delta-zero{color:var(--muted)} .delta-bar-bg{background:var(--soft)} .delta-bar-fill{background:var(--green)}
+.footer{color:var(--muted)} .footer a{color:var(--sky)}
 """
 
 _JS = """
@@ -175,7 +199,7 @@ def generate_html_report(
     artifact_dir: Union[str, Path],
     output_path: Union[str, Path, None] = None,
 ) -> str:
-    """Generate a self-contained HTML audit report.
+    """Generate a self-contained HTML report.
 
     Parameters
     ----------
@@ -219,14 +243,14 @@ def generate_html_report(
     ring_svg = f"""
 <svg class="ring-svg" width="112" height="112" viewBox="0 0 112 112">
   <circle cx="{cx}" cy="{cy}" r="{r}" fill="none"
-          stroke="#b91c1c" stroke-width="{sw}"/>
+          stroke="#fecaca" stroke-width="{sw}"/>
   <circle cx="{cx}" cy="{cy}" r="{r}" fill="none"
-          stroke="#238636" stroke-width="{sw}"
+          stroke="#16a34a" stroke-width="{sw}"
           stroke-dasharray="{green_len:.2f} {gap_len:.2f}"
           transform="rotate(-90 {cx} {cy})"/>
-  <text x="{cx}" y="{cy - 6}" text-anchor="middle" fill="#f0f6fc"
+  <text x="{cx}" y="{cy - 6}" text-anchor="middle" fill="#1c1917"
         font-size="15" font-weight="800">{cov_exact:.1f}%</text>
-  <text x="{cx}" y="{cy + 12}" text-anchor="middle" fill="#8b949e"
+  <text x="{cx}" y="{cy + 12}" text-anchor="middle" fill="#6b7280"
         font-size="9" letter-spacing="1">surrogate</text>
 </svg>"""
 
@@ -236,7 +260,9 @@ def generate_html_report(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TRACER - Audit Report</title>
+<title>Tracer routing report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
 <style>{_CSS}</style>
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
@@ -244,9 +270,10 @@ def generate_html_report(
 <div class="page">
 
 <div class="top-bar">
+  <span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>
   <span class="logo">TRACER</span>
-  <span style="color:#30363d">|</span>
-  <span style="font-size:.875rem;color:#8b949e">Audit Report</span>
+  <span class="bar-sep">|</span>
+  <span class="crumb">Routing report</span>
 </div>
 <h1>Routing Policy</h1>
 <div class="subtitle">
