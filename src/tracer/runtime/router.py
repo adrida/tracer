@@ -34,12 +34,15 @@ class Router:
         router.predict(np.array([0.1, 0.2, ...]))
     """
 
-    def __init__(self, stages: list, label_space: list, manifest, embedder=None):
+    def __init__(self, stages: list, label_space: list, manifest, embedder=None,
+                 ood_gate=None, train_embeddings=None):
         self._stages = stages
         self._label_space = label_space
         self._idx_to_label = {i: l for i, l in enumerate(label_space)}
         self.manifest = manifest
         self.embedder = embedder
+        self._ood_gate = ood_gate
+        self._train_embeddings = train_embeddings
 
     @classmethod
     def load(cls, artifact_dir: Union[str, Path], embedder=None) -> "Router":
@@ -50,13 +53,34 @@ class Router:
         artifact_dir : path to .tracer/
         embedder : optional Embedder instance - enables text-in prediction
         """
+        import json as _json
         artifact_dir = Path(artifact_dir)
         manifest = load_manifest(artifact_dir / "manifest.json")
         bundle = load_pipeline(artifact_dir)
         stages = bundle["pipeline"]["stages"]
         label_space = bundle["label_space"]
-        return cls(stages=stages, label_space=label_space,
-                   manifest=manifest, embedder=embedder)
+
+        # Optional OOD safety net: defer inputs far from the training distribution.
+        ood_gate = None
+        train_emb = None
+        ood_path = artifact_dir / "ood.json"
+        if ood_path.exists():
+            try:
+                ood_gate = _json.loads(ood_path.read_text())
+                from tracer.embeddings.index import EmbeddingIndex
+                train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
+            except Exception:
+                ood_gate, train_emb = None, None
+        return cls(stages=stages, label_space=label_space, manifest=manifest,
+                   embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb)
+
+    def _ood_flags(self, X: np.ndarray, preds) -> np.ndarray:
+        """True where each row is out-of-distribution (force-deferred)."""
+        if self._ood_gate is None or self._train_embeddings is None:
+            return np.zeros(len(X), dtype=bool)
+        from tracer.fit.ood import ood_mask
+        labels = [self._idx_to_label.get(int(p), "?") for p in preds]
+        return ood_mask(X, self._train_embeddings, labels, self._ood_gate)
 
     def _to_embedding(self, input) -> np.ndarray:
         """Convert input (text or array) to a (dim,) float32 embedding."""
@@ -111,6 +135,10 @@ class Router:
         for idx, stage in enumerate(self._stages):
             preds, accept, scores = apply_stage(stage, X)
             if accept[0]:
+                # OOD safety net: defer if the input is far from the training
+                # distribution, even when the surrogate is confident.
+                if bool(self._ood_flags(X, preds)[0]):
+                    break
                 return {
                     "label": self._idx_to_label.get(int(preds[0]), str(preds[0])),
                     "decision": "handled",
@@ -148,6 +176,10 @@ class Router:
                 f"got {X.shape[-1]}."
             )
         preds, handled, stage_id = route_pipeline(self._stages, X)
+        # OOD safety net: force-defer rows far from the training distribution.
+        if self._ood_gate is not None and np.asarray(handled).any():
+            ood = self._ood_flags(X, preds)
+            handled = np.asarray(handled) & ~ood
         labels = []
         decisions = []
         for i in range(len(X)):
