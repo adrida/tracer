@@ -1,8 +1,9 @@
 """Unified embedding interface for TRACER.
 
-Supports three backends:
+Supports four backends:
     Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
     Embedder.from_endpoint("https://api.example.com/embed")
+    Embedder.from_openai(model="text-embedding-3-small")
     Embedder.from_callable(my_fn)
 
 Once created, an Embedder plugs into the Router so you can pass raw text:
@@ -131,6 +132,58 @@ class Embedder:
         embedder = cls(_embed)
         embedder._backend = "endpoint"
         embedder._url = url
+        return embedder
+
+    # ── Factory: OpenAI API ──────────────────────────────────────────────────
+
+    @classmethod
+    def from_openai(
+        cls,
+        model: str = "text-embedding-3-small",
+        api_key: Optional[str] = None,
+        dimensions: Optional[int] = None,
+    ) -> "Embedder":
+        """Create an Embedder that calls OpenAI's native embeddings API.
+
+        Parameters
+        ----------
+        model : OpenAI model string (e.g., "text-embedding-3-small", "text-embedding-ada-002")
+        api_key : OpenAI API key. If None, looks for the OPENAI_API_KEY environment variable.
+        dimensions : Optional truncation dimensions (supported on v3 models)
+        """
+        import os
+        import json
+        from urllib.request import Request, urlopen
+
+        _api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not _api_key:
+            raise ValueError(
+                "OpenAI API key must be provided explicitly or set via the OPENAI_API_KEY environment variable."
+            )
+
+        url = "https://api.openai.com/v1/embeddings"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {_api_key}"
+        }
+
+        def _embed(texts: List[str]) -> np.ndarray:
+            data = {"input": texts, "model": model}
+            if dimensions is not None:
+                data["dimensions"] = dimensions
+
+            payload = json.dumps(data).encode()
+            req = Request(url, data=payload, headers=headers, method="POST")
+            resp = json.loads(urlopen(req).read())
+            
+            # Sort items by index to guarantee sequence integrity matching the input batch order
+            sorted_data = sorted(resp["data"], key=lambda x: x["index"])
+            results = [item["embedding"] for item in sorted_data]
+            return np.asarray(results, dtype=np.float32)
+
+        embedder = cls(_embed)
+        embedder._backend = "openai"
+        embedder._model = model
         return embedder
 
     # ── Factory: custom callable ─────────────────────────────────────────────
