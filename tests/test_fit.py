@@ -186,7 +186,33 @@ def test_router_wrong_dim_batch_raises():
         with pytest.raises(ValueError, match="dimension mismatch"):
             router.predict_batch(wrong_emb)
 
+def test_build_global_handles_failed_surrogate_sweep():
+    import numpy as np
+    from tracer.fit.pipeline import build_global
 
+    # Replicate the issue reproduction scenario with infinite values
+    X_tr = np.full((20, 8), np.inf, np.float32)
+    y_tr = np.array([0]*5 + [1]*5 + [2]*5 + [3]*5, int)
+    X_va = np.full((10, 8), np.inf, np.float32)
+    y_va = np.array([0,0,1,1,2,2,3,3,0,1], int)
+
+    split_data = {
+        "X_train": X_tr,
+        "y_train": y_tr,
+        "X_val": X_va,
+        "y_val": y_va,
+        "X_cal": X_va.copy(),
+        "y_cal": y_va.copy(),
+        "n_fit": 20,
+    }
+
+    # Execute build_global. Before our fix, this line would throw a TypeError crash.
+    result = build_global(split_data, target_ta=0.90, skip=("gbt", "xgb"))
+    
+    # Verify that the pipeline returns our structured safe failure state instead
+    assert result["method"] == "global"
+    assert result["stages"] == []
+    assert result["summary"]["status"] == "no_surrogate"
 # ── Continual learning ────────────────────────────────────────────────────────
 
 def test_update():

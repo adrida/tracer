@@ -252,6 +252,21 @@ def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = No
     clf, name, val_m = search_best_surrogate(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         on_candidate=_candidate_log(log), skip=skip)
+        
+    # --- SAFETY GUARD FOR ISSUE #29 START ---
+    if clf is None or val_m is None:
+        log("  build_global: surrogate sweep failed completely. No valid model trained.")
+        return {
+            "method": "global", 
+            "stages": [], 
+            "summary": {
+                "status": "no_surrogate", 
+                "note": "Surrogate selection failed because all model configurations failed to fit.",
+                "coverage_cal_total": 0.0
+            }
+        }
+    # --- SAFETY GUARD FOR ISSUE #29 END ---
+
     log(f"  build_global: surrogate done in {time.perf_counter()-t0:.1f}s  best={name} f1={val_m['teacher_f1']:.3f}")
     preds_cal = clf.predict(split["X_cal"])
     n_cal = len(preds_cal)
@@ -276,7 +291,6 @@ def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = No
         "teacher_agreement_lower_cal_total": ta_lower, "coverage_cal_total": 1.0,
         "val_teacher_f1": val_m["teacher_f1"], "n_train_labels": split["n_fit"]}}
 
-
 def _candidate_log(log: LogFn) -> Callable[..., None]:
     """Adapter: turn a per-candidate callback into a log line."""
     def _cb(name: str, val_f1: float, elapsed: Optional[float] = None) -> None:
@@ -297,6 +311,13 @@ def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, st
     log(f"  {stage_name}: surrogate sweep on {len(X_tr)} train / {len(X_val)} val")
     clf, name, val_m = search_best_surrogate(
         X_tr, y_tr, X_val, y_val, on_candidate=_candidate_log(log), skip=skip)
+        
+    # --- SAFETY GUARD FOR ISSUE #29 START ---
+    if clf is None or val_m is None:
+        log(f"  {stage_name}: surrogate sweep failed completely. Skipping stage.")
+        return None
+    # --- SAFETY GUARD FOR ISSUE #29 END ---
+
     log(f"  {stage_name}: surrogate done in {time.perf_counter()-t0:.1f}s  best={name} f1={val_m['teacher_f1']:.3f}")
     preds_val, probs_val = _predict(clf, X_val)
     preds_cal, probs_cal = _predict(clf, X_cal)
