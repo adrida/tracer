@@ -55,7 +55,21 @@ class Router:
         """
         import json as _json
         artifact_dir = Path(artifact_dir)
+        
+        # 1. Load the manifest first to check the status of the pipeline
         manifest = load_manifest(artifact_dir / "manifest.json")
+        
+        # ─── FIX FOR ISSUE #31 ────────────────────────────────────────────────
+        # If the last training gate blocked deployment, do not load stale artifacts
+        if manifest.selected_method is None:
+            raise ValueError(
+                f"Cannot load router from '{artifact_dir}': The calibration manifest "
+                f"reports 'selected_method' is null, meaning no trained pipeline met "
+                f"your target teacher-parity thresholds."
+            )
+        # ──────────────────────────────────────────────────────────────────────
+
+        # 2. Safely proceed with loading if the selected method is valid
         bundle = load_pipeline(artifact_dir)
         stages = bundle["pipeline"]["stages"]
         label_space = bundle["label_space"]
@@ -68,9 +82,11 @@ class Router:
             try:
                 ood_gate = _json.loads(ood_path.read_text())
                 from tracer.embeddings.index import EmbeddingIndex
-                train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
+                with open(artifact_dir / "index", "rb") as f:
+                    train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
             except Exception:
                 ood_gate, train_emb = None, None
+                
         return cls(stages=stages, label_space=label_space, manifest=manifest,
                    embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb)
 
