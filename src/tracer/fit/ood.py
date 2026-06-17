@@ -42,7 +42,7 @@ def fit_ood_gate(X_train: np.ndarray, pred_labels, k: int = 10,
     d, _ = nn.kneighbors(X_train)
     mean_d = d[:, 1:].mean(axis=1)  # drop self (col 0)
     global_thr = float(np.quantile(mean_d, quantile))
-    labels = np.asarray([str(l) for l in pred_labels])
+    labels = np.asarray([str(lbl) for lbl in pred_labels])
     per_label: dict = {}
     for lab in np.unique(labels):
         m = labels == lab
@@ -74,5 +74,5 @@ def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate) -> np
     # with a naturally wide neighbourhood but never tighten it below global
     # (which would over-defer in-distribution traffic that merely phrases things
     # differently from the training sample).
-    thr = np.array([max(float(per.get(str(l), g)), g) for l in query_labels], dtype=float)
+    thr = np.array([max(float(per.get(str(lbl), g)), g) for lbl in query_labels], dtype=float)
     return mean_d > thr
