@@ -39,7 +39,7 @@ class CloudError(RuntimeError):
 
 # A real User-Agent: the default "Python-urllib/x" trips Cloudflare's bot
 # protection on app.tracerml.ai (HTTP 403, CF error 1010).
-USER_AGENT = "tracer-cli/0.3.1 (+https://tracerml.ai)"
+USER_AGENT = "tracer-cli/0.3.2 (+https://tracerml.ai)"
 
 
 def _http(

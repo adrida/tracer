@@ -25,7 +25,7 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
     path = Path(path)
     records = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
@@ -33,7 +33,7 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(
-                    f"Malformed JSON in {path} at line {len(records) + 1}: {exc}"
+                    f"Malformed JSON in {path} at line {lineno}: {exc}"
                 ) from exc
             # Accept common key aliases so middleware dumps load without
             # reshaping (mirrors the scan loader). Canonical keys are
@@ -42,7 +42,7 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
             label_key = next((k for k in _LABEL_KEYS if k in row), None)
             if input_key is None or label_key is None:
                 raise ValueError(
-                    f"Trace at line {len(records) + 1} is missing an input and/or "
+                    f"Trace at line {lineno} is missing an input and/or "
                     f"teacher field. Accepted input keys: {_INPUT_KEYS}; "
                     f"teacher keys: {_LABEL_KEYS}. Got keys: {list(row.keys())}"
                 )
