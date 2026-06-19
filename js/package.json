@@ -1,5 +1,5 @@
 {
-  "name": "@tracer/watch",
+  "name": "@tracer-llm/watch",
   "version": "0.1.0",
   "description": "Local-first, OpenTelemetry-GenAI-aligned LLM trace recording. Watch any model call with a wrapper, a decorator, or an async span. Zero runtime dependencies.",
   "type": "module",

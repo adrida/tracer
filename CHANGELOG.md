@@ -11,7 +11,7 @@ versioning.
   accumulate and auto-optimize once there are enough. Captures the full request
   and response on the OpenTelemetry GenAI (`gen_ai.*`) schema, with pluggable
   sinks (local file, Tracer Cloud, OTLP, or several at once).
-- `@tracer/watch`: a zero-dependency JavaScript/TypeScript mirror of the watch
+- `@tracer-llm/watch`: a zero-dependency JavaScript/TypeScript mirror of the watch
   decorator (async-context aware), so JS pipelines get the same one-line
   observability as Python.
 - `tracer cloud`: a full command-line interface for Tracer Cloud, at parity with

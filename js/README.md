@@ -1,4 +1,4 @@
-# @tracer/watch
+# @tracer-llm/watch
 
 Local-first, OpenTelemetry-aligned LLM trace recording for JavaScript / TypeScript.
 
@@ -17,13 +17,13 @@ are appended to `./.tracer/watch/<name>.jsonl`.
 ## Install
 
 ```sh
-npm install @tracer/watch
+npm install @tracer-llm/watch
 ```
 
 ## Usage
 
 ```ts
-import { watch } from "@tracer/watch";
+import { watch } from "@tracer-llm/watch";
 
 const w = watch("support_classifier", { system: "provider-x", model: "model-x" });
 ```

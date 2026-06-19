@@ -8,6 +8,7 @@
 [![Downloads](https://static.pepy.tech/badge/tracer-llm)](https://pepy.tech/project/tracer-llm)
 [![Downloads](https://static.pepy.tech/badge/tracer-llm/month)](https://pepy.tech/project/tracer-llm)
 [![Python](https://img.shields.io/pypi/pyversions/tracer-llm)](https://pypi.org/project/tracer-llm/)
+[![npm](https://img.shields.io/npm/v/@tracer-llm/watch?label=%40tracer-llm%2Fwatch&color=cb3837&logo=npm)](https://www.npmjs.com/package/@tracer-llm/watch)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/adrida/tracer/actions)
 [![Website](https://img.shields.io/badge/website-tracerml.ai-blue)](https://tracerml.ai)
@@ -95,7 +96,22 @@ The same watched spans map 1:1 to `TraceRecord`, so once you have traffic you ca
 
 ## Using from JavaScript / Node.js
 
-TRACER works with JS pipelines without any Python in your application code. The pattern: log traces from JS → fit offline with the CLI → run `tracer serve` as a sidecar → call it via `fetch`.
+**Watch your JS LLM calls (free observability):** [`@tracer-llm/watch`](https://www.npmjs.com/package/@tracer-llm/watch) mirrors the Python decorator with zero dependencies, recording every call as an OpenTelemetry GenAI span (local by default, or streamed free to Tracer Cloud).
+
+```bash
+npm install @tracer-llm/watch
+```
+
+```js
+import { watch } from "@tracer-llm/watch";
+
+const w = watch("support_classifier", { system: "provider-x", model: "model-x" });
+
+// Wrap the function that calls your model; the return value is auto-captured.
+const classify = w(async (ticket) => callYourLLM(ticket));
+```
+
+Full guide: [docs/javascript.md](docs/javascript.md). To route (not just observe) from JS, log traces, fit offline with the CLI, run `tracer serve` as a sidecar, and call it via `fetch`:
 
 ```js
 // 1. Log every LLM classification
@@ -188,6 +204,7 @@ X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 | `tracer update new_traces.jsonl` | Refit with new traces |
 | `tracer report-html` | Open the HTML report |
 | `tracer serve .tracer --port 8000` | HTTP prediction server |
+| `tracer cloud login` | Drive Tracer Cloud from the terminal: create, train, route, test, and watch tracers, at parity with the dashboard ([docs](docs/cloud.md)) |
 
 `tracer scan` is the fast, conservative first look (similarity grouping plus exact held-out bounds, no training). It needs about 1,000 traces and works best around 5,000; below 1,000 it asks you to collect more, or pass `--force` for a best-effort floor. Embeddings are computed locally by default (sentence-transformers), or point it at your own embedding service with `--embed-url`. `tracer fit` then trains the real router and certifies more of the same traffic. The HTML report includes an interactive 3D map of your embedding space with a verdict/label colour toggle. See the [CLI reference](docs/cli.md) for every flag.
 

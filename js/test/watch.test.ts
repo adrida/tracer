@@ -1,5 +1,5 @@
 /**
- * Tests for @tracer/watch: spans, OTel mapping, response extraction (both
+ * Tests for @tracer-llm/watch: spans, OTel mapping, response extraction (both
  * shapes), key-prefix routing, cloud-sink prod-safety + batching/flush, nested
  * spans, the wrapper/decorator/span forms. All hermetic: no network, temp dirs,
  * fetch is mocked.

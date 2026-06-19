@@ -106,11 +106,11 @@ Pass a custom `sink=` to `watch()` to fully control export.
 
 ## JavaScript / TypeScript
 
-The same watcher ships for JS/TS as `@tracer/watch` (zero dependencies, same
+The same watcher ships for JS/TS as `@tracer-llm/watch` (zero dependencies, same
 capture, same free Tracer Cloud streaming):
 
 ```ts
-import { watch } from "@tracer/watch";
+import { watch } from "@tracer-llm/watch";
 
 const w = watch("support-router");                 // local by default; cloud with one key
 
@@ -133,7 +133,7 @@ await w.span({ input, userId: "u_42" }, async (s) => {
 ```
 
 Set `TRACER_CLOUD_KEY` (or `watch(name, { cloudKey })`) to stream to Tracer
-Cloud. See the `@tracer/watch` package README for details.
+Cloud. See the `@tracer-llm/watch` package README for details.
 
 ## From watched traffic to a router
 
