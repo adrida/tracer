@@ -216,9 +216,9 @@ from tracer import Embedder
 # sentence-transformers
 embedder = Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
 
-# OpenAI-compatible endpoint
+# any standard embeddings endpoint
 embedder = Embedder.from_endpoint(
-    "https://api.openai.com/v1/embeddings",
+    "https://your-host/v1/embeddings",
     headers={"Authorization": "Bearer sk-..."},
     input_key="input",
     output_key="data.0.embedding",
@@ -254,7 +254,7 @@ router.predict(
 {
     "label":        str,    # predicted class label
     "decision":     str,    # "handled" or "deferred"
-    "accept_score": float,  # acceptor confidence (0–1)
+    "accept_score": float,  # acceptor confidence (0-1)
     "stage":        int,    # which pipeline stage handled it
 }
 ```

@@ -47,7 +47,7 @@ def generate_sankey(
     pip install tracer-llm[viz]
     """
     try:
-        import plotly.graph_objects as _go  # noqa: F401 — ensure plotly available
+        import plotly.graph_objects as _go  # noqa: F401, ensure plotly available
     except ImportError:
         raise ImportError(
             "plotly is required for Sankey diagrams. "

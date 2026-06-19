@@ -45,7 +45,7 @@ def _cmd_scan(args):
 
     # Embeddings. Default: sentence-transformers locally (the model below).
     # --embeddings reuses a precomputed .npy; --embed-url calls your own HTTP
-    # embedding service (any endpoint, e.g. OpenAI-compatible), no vendor lock-in.
+    # embedding service (any HTTP endpoint), no vendor lock-in.
     embeddings = None
     if args.embeddings:
         import numpy as _np
@@ -703,6 +703,12 @@ def main():
     p_update.add_argument("traces", help="Path to new traces JSONL file")
     p_update.add_argument("--artifact-dir", default=".tracer")
 
+    # Cloud command group: drive Tracer Cloud (app.tracerml.ai) from the CLI,
+    # mirroring the web UI. Defined in tracer.cloud.cli.
+    from ..cloud import cli as cloud_cli
+    p_cloud = sub.add_parser("cloud", help="Drive Tracer Cloud from the terminal (login, tracers, train, route…)")
+    cloud_cli.build_parser(p_cloud)
+
     args = parser.parse_args()
 
     dispatch = {
@@ -716,7 +722,10 @@ def main():
         "demo":        _cmd_demo,
     }
 
-    if args.command in dispatch:
+    if args.command == "cloud":
+        from ..cloud import cli as cloud_cli
+        cloud_cli.run(args)
+    elif args.command in dispatch:
         dispatch[args.command](args)
     else:
         parser.print_help()

@@ -34,7 +34,7 @@ SEED = 42
 def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
     """Return model factory dict.  Factories are callables → fitted-ready estimator.
 
-    Pass ``skip=("name", ...)`` to exclude candidates from the sweep — useful
+    Pass ``skip=("name", ...)`` to exclude candidates from the sweep, useful
     when one model is known to dominate wall-time on the target data (e.g.
     ``skip=("gbt",)`` on large multi-class problems).
     """
@@ -127,7 +127,7 @@ def _invoke_on_candidate(cb, name: str, val_f1: float, elapsed: float) -> None:
             cb(name, val_f1, elapsed)
         except TypeError:
             cb(name, val_f1)
-    except Exception as e:  # pragma: no cover — defensive
+    except Exception as e:  # pragma: no cover, defensive
         warnings.warn(f"on_candidate callback raised: {e!r}", RuntimeWarning)
 
 
@@ -150,7 +150,7 @@ def search_best_surrogate(
                        ``cb(name, val_f1)`` (legacy) or
                        ``cb(name, val_f1, elapsed_seconds)`` (preferred).
                        Exceptions raised by the callback are warned and
-                       swallowed — they do not abort the sweep.
+                       swallowed, they do not abort the sweep.
     skip             : candidate names to omit from the sweep (forwarded to
                        ``_candidates``). Useful for pruning models that
                        dominate wall-time, e.g. ``skip=("gbt",)``.

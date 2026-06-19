@@ -32,7 +32,7 @@ class FitConfig:
     verbose: bool = True
     # Candidate surrogate model names to skip during the sweep (e.g. ("gbt",)
     # on large multi-class datasets where sklearn's GradientBoosting dominates
-    # wall-time — we have seen 1000× slowdowns vs the next slowest candidate
+    # wall-time: we have seen 1000× slowdowns vs the next slowest candidate
     # on ~3k × 22-class embedding inputs). See `tracer.fit.surrogate._candidates`
     # for the full set of names.
     skip_candidates: Tuple[str, ...] = ()

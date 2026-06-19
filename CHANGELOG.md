@@ -3,6 +3,33 @@
 All notable changes to TRACER are recorded here. This project follows semantic
 versioning.
 
+## 0.3.0 (2026-06)
+
+### Added
+- `tracer.watch`: a decorator (and HTTP fallback) that observes the LLM calls
+  your pipeline already makes and ships them, free, to Tracer Cloud, where they
+  accumulate and auto-optimize once there are enough. Captures the full request
+  and response on the OpenTelemetry GenAI (`gen_ai.*`) schema, with pluggable
+  sinks (local file, Tracer Cloud, OTLP, or several at once).
+- `@tracer/watch`: a zero-dependency JavaScript/TypeScript mirror of the watch
+  decorator (async-context aware), so JS pipelines get the same one-line
+  observability as Python.
+- `tracer cloud`: a full command-line interface for Tracer Cloud, at parity with
+  the dashboard. Browser or password login, then manage tracers (create, quick
+  and bulk uploads, agentic `onboard`, rename, delete), training (retrain,
+  auto-retrain, promote/rollback, live status), routing (`route`), test
+  batteries, the model library, API keys, observability ingest keys, billing,
+  analytics, trace selection (`traces`), and a public `scan`.
+- Lazy package initialization so `import tracer` stays fast and only pulls in the
+  heavy pieces when you actually use them.
+
+### Changed
+- `tracer scan` is more robust on messy uploads: tolerant input/label aliasing
+  and a clarification path so ambiguous files still produce a result.
+
+### Docs
+- New guides for the watch decorator and the `tracer cloud` CLI.
+
 ## 0.2.0 (2026-06)
 
 ### Added

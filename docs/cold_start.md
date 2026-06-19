@@ -6,16 +6,16 @@ Getting good results from TRACER requires enough traces to train a reliable surr
 
 ## How many traces do you need?
 
-There is no hard minimum — TRACER will attempt to fit on whatever you provide. But the quality of the routing policy depends directly on how much data the surrogate and acceptor have to learn from.
+There is no hard minimum, TRACER will attempt to fit on whatever you provide. But the quality of the routing policy depends directly on how much data the surrogate and acceptor have to learn from.
 
 **Rules of thumb:**
 
 | Trace volume | What to expect |
 |---|---|
 | **< 50 total** | Fit will likely produce `selected_method: null` (no deployable policy). The train/val/cal split leaves too few samples per class for reliable calibration. |
-| **50–200** | A global surrogate _may_ deploy if the classification task is simple (few classes, clean teacher labels). L2D and RSB are unlikely to calibrate well. |
-| **200–500** | L2D starts becoming viable. Expect moderate coverage (40–70%) depending on class count and task difficulty. |
-| **500–1,500** | The sweet spot for most tasks. All three pipeline families compete meaningfully, and coverage typically reaches 70–90%+. |
+| **50-200** | A global surrogate _may_ deploy if the classification task is simple (few classes, clean teacher labels). L2D and RSB are unlikely to calibrate well. |
+| **200-500** | L2D starts becoming viable. Expect moderate coverage (40-70%) depending on class count and task difficulty. |
+| **500-1,500** | The sweet spot for most tasks. All three pipeline families compete meaningfully, and coverage typically reaches 70-90%+. |
 | **1,500+** | Diminishing returns on coverage, but useful for high-class-count tasks (50+ intents) or when you need very tight parity bars (≥ 0.98). |
 
 These numbers assume reasonably separable embeddings. Poor embeddings can make even large datasets underperform.
@@ -41,7 +41,7 @@ If you're evaluating TRACER for a new classification pipeline and don't yet have
 
 ### Step 1: Seed with synthetic or sampled inputs
 
-Pick 100–300 representative inputs for your classification task. These can come from:
+Pick 100-300 representative inputs for your classification task. These can come from:
 
 - A test set you already have
 - Manually written examples covering each class
@@ -127,16 +127,16 @@ config = tracer.FitConfig(
 
 If `best_ta` is well below your target even at zero coverage, the problem is likely:
 
-1. **Embeddings don't separate classes** — try a stronger embedding model
-2. **Teacher label noise** — audit traces where the surrogate disagrees
-3. **Too few traces per class** — collect more data for underrepresented classes
+1. **Embeddings don't separate classes**, try a stronger embedding model
+2. **Teacher label noise**, audit traces where the surrogate disagrees
+3. **Too few traces per class**, collect more data for underrepresented classes
 
 ### Low coverage despite many traces
 
 If coverage plateaus well below 80% with 500+ traces:
 
 - Check class imbalance: a few dominant classes might be well-covered while rare classes drag the average down
-- Try the RSB pipeline family explicitly — it's designed for multi-stage residual routing
+- Try the RSB pipeline family explicitly, it's designed for multi-stage residual routing
 - Improve embedding quality: switching from `all-MiniLM-L6-v2` to `all-mpnet-base-v2` can significantly improve class separation
 
 ### Coverage varies between fits

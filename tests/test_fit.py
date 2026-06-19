@@ -318,7 +318,7 @@ def test_search_surrogate_invokes_on_candidate_callback():
 
 
 def test_search_surrogate_callback_exception_does_not_abort():
-    """A raising on_candidate must not derail the sweep — warn and keep going."""
+    """A raising on_candidate must not derail the sweep, warn and keep going."""
     from tracer.fit.surrogate import search_best_surrogate
     rng = np.random.RandomState(0)
     X_tr = rng.randn(200, 16).astype(np.float32); y_tr = rng.randint(0, 3, size=200)

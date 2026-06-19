@@ -1,0 +1,41 @@
+{
+  "name": "@tracer/watch",
+  "version": "0.1.0",
+  "description": "Local-first, OpenTelemetry-GenAI-aligned LLM trace recording. Watch any model call with a wrapper, a decorator, or an async span. Zero runtime dependencies.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "llm",
+    "observability",
+    "opentelemetry",
+    "gen_ai",
+    "tracing",
+    "telemetry"
+  ],
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

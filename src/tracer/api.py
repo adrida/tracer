@@ -95,7 +95,7 @@ def fit(
     log_fn: Optional[Callable[[str], None]] = None
     if config.verbose:
         _t0 = time.perf_counter()
-        def log_fn(msg: str) -> None:  # noqa: E301 — local helper
+        def log_fn(msg: str) -> None:  # noqa: E301, local helper
             elapsed = time.perf_counter() - _t0
             print(f"[tracer.fit +{elapsed:6.1f}s] {msg}", file=sys.stderr, flush=True)
 
@@ -255,7 +255,7 @@ def update(
     existing_traces_path = artifact_dir / "all_traces.jsonl"
     if not existing_traces_path.exists():
         raise FileNotFoundError(
-            f"{existing_traces_path} not found — cannot continue continual "
+            f"{existing_traces_path} not found, cannot continue continual "
             "learning. fit() writes this file; if it was removed, re-run "
             "tracer.fit() on your full trace set to rebuild it before calling "
             "update().")
@@ -291,3 +291,13 @@ def load_router(artifact_dir: Union[str, Path] = ".tracer", embedder=None) -> Ro
                If set, router.predict("some text") works directly.
     """
     return Router.load(artifact_dir, embedder=embedder)
+
+
+# Heal the function/subpackage name collision: importing this module pulls in
+# the `tracer.fit` pipeline subpackage, which Python binds as the `tracer.fit`
+# attribute and would shadow the public `tracer.fit()` function. The lazy
+# package __getattr__ can't override an existing attribute, so re-assert the
+# function on the package here -- importing tracer.api by ANY path fixes it.
+import tracer as _tracer  # noqa: E402
+
+_tracer.fit = fit

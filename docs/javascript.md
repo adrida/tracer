@@ -29,7 +29,7 @@ Each line must have `input` (the text) and `teacher` (the label your LLM returne
 
 ### 2. Compute embeddings (offline, once before fit)
 
-The HTTP server at inference time expects embedding vectors, so you need to embed your traces before fitting. Use the same embedding model you plan to use at inference time — this is the only constraint.
+The HTTP server at inference time expects embedding vectors, so you need to embed your traces before fitting. Use the same embedding model you plan to use at inference time, this is the only constraint.
 
 **Option A: OpenAI embeddings (natural fit for JS pipelines)**
 
@@ -38,7 +38,7 @@ pip install tracer-llm openai numpy
 ```
 
 ```python
-# embed.py — run once, or in your data pipeline
+# embed.py: run once, or in your data pipeline
 import json, numpy as np
 from openai import OpenAI
 
@@ -71,7 +71,7 @@ np.save("traces.npy", X)
 tracer fit traces.jsonl --target 0.95
 ```
 
-TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` extension). Run this offline — in a cron job, a GitHub Action, or manually. It does not touch your application.
+TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` extension). Run this offline, in a cron job, a GitHub Action, or manually. It does not touch your application.
 
 ---
 
@@ -81,7 +81,7 @@ TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` e
 tracer serve .tracer --port 8000
 ```
 
-Run this as a sidecar next to your Node app — same server, same docker-compose, same machine. It binds to `0.0.0.0:8000` by default.
+Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. It binds to `0.0.0.0:8000` by default.
 
 ---
 
@@ -111,7 +111,7 @@ async function route(text) {
   const { label, decision } = await res.json()
 
   if (decision === 'handled') {
-    return label  // surrogate answered — no LLM call
+    return label  // surrogate answered, no LLM call
   }
 
   // Deferred: call your LLM and log the new trace for the next refit
@@ -132,7 +132,7 @@ const res = await fetch('http://localhost:8000/predict_batch', {
   body: JSON.stringify({ embeddings: [embedding1, embedding2, ...] }),
 })
 const { labels, decisions, handled } = await res.json()
-// handled: boolean[] — true means surrogate answered, no LLM needed
+// handled: boolean[]: true means surrogate answered, no LLM needed
 ```
 
 ---
@@ -141,7 +141,7 @@ const { labels, decisions, handled } = await res.json()
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| `GET` | `/health` | — | `{"status": "ok", "method", "coverage", ...}` |
+| `GET` | `/health` |, | `{"status": "ok", "method", "coverage", ...}` |
 | `POST` | `/predict` | `{"embedding": [float, ...]}` | `{"label", "decision", "accept_score"}` |
 | `POST` | `/predict_batch` | `{"embeddings": [[float, ...], ...]}` | `{"labels", "decisions", "handled"}` |
 
@@ -151,7 +151,7 @@ const { labels, decisions, handled } = await res.json()
 
 ## Continual learning
 
-Every deferred input that reaches your LLM is a new trace. Accumulate them and retrain periodically — coverage grows with each refit.
+Every deferred input that reaches your LLM is a new trace. Accumulate them and retrain periodically, coverage grows with each refit.
 
 ```bash
 # Run on a schedule (cron, GitHub Action, whatever)

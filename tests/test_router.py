@@ -1,6 +1,6 @@
 """Tests for the production Router (runtime/router.py).
 
-Covers the Router interface directly — no HTTP server involved.
+Covers the Router interface directly, no HTTP server involved.
 Complements test_serve.py (HTTP layer) and the routing smoke tests in
 test_fit.py.
 """
@@ -182,4 +182,4 @@ def test_fallback_called_on_deferred(fitted):
             deferred_found = True
             break
     if not deferred_found:
-        pytest.skip("no deferred prediction found — policy handled everything")
+        pytest.skip("no deferred prediction found, policy handled everything")

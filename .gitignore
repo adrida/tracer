@@ -32,3 +32,6 @@ notebooks/data/
 # Editors
 .idea/
 .vscode/
+
+# Node (JS package)
+node_modules/

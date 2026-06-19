@@ -98,7 +98,7 @@ sentence-transformers** (`pip install tracer-llm[embeddings]`; pick the model wi
 - call **your own embedding service** with `--embed-url` (any HTTP endpoint that
   takes JSON and returns a vector; pass auth with `--embed-header`, and the
   `--embed-input-key`/`--embed-output-key`/`--embed-batch-key` flags adapt it to
-  OpenAI-compatible or custom response shapes). No vendor is assumed or required.
+  standard or custom response shapes). No vendor is assumed or required.
 
 **Examples:**
 
@@ -142,8 +142,8 @@ tracer fit <traces> [--artifact-dir <dir>] [--target <float>] [--trees] [--skip 
 |----------|---------|-------------|
 | `traces` | required | Path to traces JSONL file |
 | `--artifact-dir` | `.tracer` | Where to save artifacts |
-| `--target` | `0.90` | Target teacher agreement (0.0–1.0) |
-| `--trees` | off | Add the tree-based surrogates (decision tree, random forest, extra-trees, gradient boosting). **Off by default** — they are slower and the linear + MLP heads are usually enough; turn them on for hard, high-class-count tasks. |
+| `--target` | `0.90` | Target teacher agreement (0.0-1.0) |
+| `--trees` | off | Add the tree-based surrogates (decision tree, random forest, extra-trees, gradient boosting). **Off by default**, they are slower and the linear + MLP heads are usually enough; turn them on for hard, high-class-count tasks. |
 | `--skip` | none | Comma-separated surrogate models to drop from the zoo (e.g. `mlp_1h,mlp_2h`). |
 
 The default zoo is lightweight (logistic regression, SGD, small MLPs) so a fit is fast. `--trees` adds the heavier tree models, which can lift coverage on difficult datasets (e.g. Banking77's 77 classes) at the cost of fit time.

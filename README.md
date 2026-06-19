@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/adrida/tracer/actions)
 [![Website](https://img.shields.io/badge/website-tracerml.ai-blue)](https://tracerml.ai)
-[![Docs](https://img.shields.io/badge/docs-docs.tracer.deeprecall.io-blue)](https://docs.tracer.deeprecall.io)
+[![Docs](https://img.shields.io/badge/docs-reference-blue)](docs/)
 
 Most LLM-based classification pipelines use a large language model for every single input. In practice, the vast majority of that traffic is predictable - a lightweight traditional ML model (logistic regression, gradient-boosted trees, or a small neural net) can match the LLM's output with near-perfect agreement.
 
@@ -63,7 +63,35 @@ out = router.predict("What is my balance?")
 out = router.predict("Some edge case", fallback=lambda: call_my_llm(text))
 ```
 
-> **Want to go deeper?** The [concepts guide](docs/concepts.md) explains the full pipeline, model zoo, and parity gate. The [API reference](docs/api.md) covers every parameter. The [CLI reference](docs/cli.md) covers `tracer fit`, `tracer serve`, and more.
+> **Want to go deeper?** The [concepts guide](docs/concepts.md) explains the full pipeline, model zoo, and parity gate. The [API reference](docs/api.md) covers every parameter. The [CLI reference](docs/cli.md) covers `tracer fit`, `tracer serve`, and more. For observability see [watch](docs/watch.md), and to drive Tracer Cloud from your shell see the [`tracer cloud` reference](docs/cloud.md).
+
+## Watch your LLM traffic (free observability)
+
+Before you fit anything, just *watch*. Wrap any LLM call and every request is
+recorded locally as an OpenTelemetry GenAI span, no account, no key, nothing
+leaves your machine:
+
+```python
+import tracer
+
+watch = tracer.watch("support_classifier", system="my-provider", model="my-model")
+
+@watch
+def classify(ticket: str) -> str:
+    return call_my_llm(ticket)   # traces append to .tracer/watch/*.jsonl
+```
+
+Want them in a dashboard? Tracer Cloud observability is **free**. Mint a key
+(`tracer cloud ingest-keys create`, or the Watch page in the app) and set one
+env var, your traffic streams in within seconds, prod-safe (batched, never adds
+latency or throws):
+
+```bash
+export TRACER_CLOUD_KEY=trobs_...   # or watch(..., cloud_key="trobs_...")
+```
+
+The same watched spans map 1:1 to `TraceRecord`, so once you have traffic you can
+`tracer fit` a router from it. Full guide: [docs/watch.md](docs/watch.md).
 
 ## Using from JavaScript / Node.js
 
@@ -196,7 +224,7 @@ pip install tracer-llm[all]           # everything
 ## Paper
 
 **TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification**  
-Adam Rida — arXiv 2026
+Adam Rida, arXiv 2026
 
 [![arXiv](https://img.shields.io/badge/arXiv-2604.14531-b31b1b.svg)](https://arxiv.org/abs/2604.14531) [![Hugging Face](https://img.shields.io/badge/🤗%20HF-Papers-yellow)](https://huggingface.co/papers/2604.14531)
 

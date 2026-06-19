@@ -88,7 +88,7 @@ All candidate pipelines evaluated during fit, for every target TA in `frontier_t
 ]
 ```
 
-Use this to understand the coverage–quality tradeoff before committing to a target:
+Use this to understand the coverage-quality tradeoff before committing to a target:
 
 ```python
 import json
@@ -229,6 +229,6 @@ The `.tracer/` directory is fully self-contained. You can:
 - Archive it with the traces for audit/reproducibility
 
 Typical size:
-- `pipeline.joblib`: 1–50 MB depending on model and label count
+- `pipeline.joblib`: 1-50 MB depending on model and label count
 - `index.embeddings.npy`: `n_traces × dim × 4` bytes (e.g. 10k × 1024 → 40 MB)
 - Everything else: < 1 MB
