@@ -139,6 +139,8 @@ def fit(
         scores = np.zeros(len(X))
         for i, stage in enumerate(best["stages"]):
             mask = stage_id == i
+            if i == len(best["stages"]) - 1:
+                mask = mask | (stage_id == -1)
             if mask.any():
                 _, _, s = apply_stage(stage, X[mask])
                 scores[mask] = s

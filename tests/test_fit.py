@@ -259,6 +259,8 @@ def test_qualitative_report_boundary_pairs():
                 assert bp.teacher_label is not None
                 assert len(bp.handled_preview) > 0
                 assert len(bp.deferred_preview) > 0
+                assert bp.deferred_score is not None
+                assert bp.deferred_score > 0.0
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
