@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Union
 
 import numpy as np
-
+import multiprocessing
 
 _router = None
 _manifest = None
@@ -128,7 +128,7 @@ def serve(
     artifact_dir = Path(artifact_dir)
     _manifest = load_manifest(artifact_dir / "manifest.json")
     _router = Router.load(artifact_dir)
-
+    
     server = HTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
     cov = f"{_manifest.coverage_cal:.1%}" if _manifest.coverage_cal else "n/a"

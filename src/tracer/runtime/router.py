@@ -35,7 +35,7 @@ class Router:
     """
 
     def __init__(self, stages: list, label_space: list, manifest, embedder=None,
-                 ood_gate=None, train_embeddings=None):
+                 ood_gate=None, train_embeddings=None,nn_index=None,):
         self._stages = stages
         self._label_space = label_space
         self._idx_to_label = {i: l for i, l in enumerate(label_space)}
@@ -43,6 +43,7 @@ class Router:
         self.embedder = embedder
         self._ood_gate = ood_gate
         self._train_embeddings = train_embeddings
+        self._nn_index = nn_index
 
     @classmethod
     def load(cls, artifact_dir: Union[str, Path], embedder=None) -> "Router":
@@ -77,8 +78,17 @@ class Router:
                 train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
             except Exception:
                 ood_gate, train_emb = None, None
+
+
+            nn_index = None
+            if ood_gate is not None and train_emb is not None:
+                from sklearn.neighbors import NearestNeighbors
+
+                nn_index = NearestNeighbors(
+                    n_neighbors=ood_gate.get("k", 10)
+                ).fit(train_emb)            
         return cls(stages=stages, label_space=label_space, manifest=manifest,
-                   embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb)
+                   embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb,nn_index=nn_index)
 
     def _ood_flags(self, X: np.ndarray, preds) -> np.ndarray:
         """True where each row is out-of-distribution (force-deferred)."""
@@ -86,7 +96,7 @@ class Router:
             return np.zeros(len(X), dtype=bool)
         from tracer.fit.ood import ood_mask
         labels = [self._idx_to_label.get(int(p), "?") for p in preds]
-        return ood_mask(X, self._train_embeddings, labels, self._ood_gate)
+        return ood_mask(X, self._train_embeddings, labels, self._ood_gate,nn=self._nn_index,)
 
     def _to_embedding(self, input) -> np.ndarray:
         """Convert input (text or array) to a (dim,) float32 embedding."""
