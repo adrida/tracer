@@ -52,3 +52,17 @@ def test_ood_mask_no_gate_is_noop():
     X = np.zeros((3, 4), dtype=np.float32)
     out = ood_mask(X, X, ["a", "a", "a"], None)
     assert out.shape == (3,) and not out.any()
+
+
+def test_ood_mask_with_prefitted_nn():
+    X, labels = _train()
+    gate = fit_ood_gate(X, labels)
+    from sklearn.neighbors import NearestNeighbors
+    k = gate["k"]
+    nn = NearestNeighbors(n_neighbors=k).fit(X)
+    X_in = X[:10]
+    q = ["a"] * 10
+    # verify it runs and returns correct output when passing pre-fitted nn
+    out1 = ood_mask(X_in, X, q, gate, nn=nn)
+    out2 = ood_mask(X_in, X, q, gate)
+    assert np.array_equal(out1, out2)

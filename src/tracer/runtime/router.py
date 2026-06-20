@@ -43,6 +43,17 @@ class Router:
         self.embedder = embedder
         self._ood_gate = ood_gate
         self._train_embeddings = train_embeddings
+        self._ood_nn = None
+        if ood_gate is not None and train_embeddings is not None:
+            try:
+                from sklearn.neighbors import NearestNeighbors
+                k = int(min(ood_gate.get("k", 10), len(train_embeddings)))
+                if k >= 1:
+                    self._ood_nn = NearestNeighbors(n_neighbors=k).fit(
+                        np.asarray(train_embeddings, dtype=np.float32)
+                    )
+            except Exception:
+                pass
 
     @classmethod
     def load(cls, artifact_dir: Union[str, Path], embedder=None) -> "Router":
@@ -86,7 +97,7 @@ class Router:
             return np.zeros(len(X), dtype=bool)
         from tracer.fit.ood import ood_mask
         labels = [self._idx_to_label.get(int(p), "?") for p in preds]
-        return ood_mask(X, self._train_embeddings, labels, self._ood_gate)
+        return ood_mask(X, self._train_embeddings, labels, self._ood_gate, nn=self._ood_nn)
 
     def _to_embedding(self, input) -> np.ndarray:
         """Convert input (text or array) to a (dim,) float32 embedding."""
