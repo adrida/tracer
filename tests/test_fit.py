@@ -187,6 +187,34 @@ def test_router_wrong_dim_batch_raises():
             router.predict_batch(wrong_emb)
 
 
+# ── Embedding persistence (continual-learning consistency) ────────────────────
+
+def test_embedding_index_does_not_mutate_or_normalize_caller():
+    """build() must not rescale the caller's array, and must store embeddings
+    in their original scale — otherwise update() refits on a mix of unit-norm
+    history and raw new vectors."""
+    from tracer.embeddings.index import EmbeddingIndex
+    X = (np.random.RandomState(0).randn(8, 5) * 5).astype(np.float32)
+    X_before = X.copy()
+    idx = EmbeddingIndex.build(X)
+    assert np.allclose(X, X_before), "build() mutated the caller's embeddings"
+    assert np.allclose(idx.embeddings, X_before), "stored embeddings were rescaled"
+    assert (np.linalg.norm(idx.embeddings, axis=1) > 1.5).any(), "stored embeddings look L2-normalized"
+
+
+def test_fit_persists_raw_embeddings():
+    """The index round-trips the raw (un-normalized) embeddings, so a later
+    update() vstacks a consistent feature space."""
+    from tracer.api import fit
+    from tracer.embeddings.index import EmbeddingIndex
+    with tempfile.TemporaryDirectory() as tmp:
+        path, X, _ = _make_traces(tmp)
+        artifact_dir = Path(tmp) / ".tracer"
+        fit(path, artifact_dir=artifact_dir)
+        loaded = EmbeddingIndex.load(artifact_dir / "index")
+        assert np.allclose(loaded.embeddings, X.astype(np.float32), atol=1e-5)
+
+
 # ── Continual learning ────────────────────────────────────────────────────────
 
 def test_update():
