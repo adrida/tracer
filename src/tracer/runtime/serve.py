@@ -132,10 +132,10 @@ def serve(
     server = HTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
     cov = f"{_manifest.coverage_cal:.1%}" if _manifest.coverage_cal else "n/a"
-    print(f"\n  TRACER serve")
+    print("\n  TRACER serve")
     print(f"  method={method}  coverage={cov}  labels={len(_manifest.label_space)}")
     print(f"  listening on http://{host}:{port}")
-    print(f"  endpoints:")
+    print("  endpoints:")
     predict_ex = '{"embedding": [...]}'
     batch_ex = '{"embeddings": [[...], ...]}'
     print(f"    POST /predict        {predict_ex}")
