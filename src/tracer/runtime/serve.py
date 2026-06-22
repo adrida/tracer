@@ -13,7 +13,7 @@ Zero external dependencies - uses http.server from stdlib.
 from __future__ import annotations
 
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Union
 
@@ -39,7 +39,7 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._json_response(404, {"error": "not found",
                                        "endpoints": ["GET /health", "POST /predict",
-                                                      "POST /predict_batch"]})
+                                                     "POST /predict_batch"]})
 
     def do_POST(self):
         try:
@@ -93,13 +93,17 @@ class _Handler(BaseHTTPRequestHandler):
         return json.loads(raw)
 
     def _json_response(self, code: int, data: dict):
-        body = json.dumps(data, default=str).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data, default=str).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected early before or during writing response data
+            return
 
     def log_message(self, fmt, *args):
         # Quiet logging - only errors
@@ -129,7 +133,7 @@ def serve(
     _manifest = load_manifest(artifact_dir / "manifest.json")
     _router = Router.load(artifact_dir)
 
-    server = HTTPServer((host, port), _Handler)
+    server = ThreadingHTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
     cov = f"{_manifest.coverage_cal:.1%}" if _manifest.coverage_cal else "n/a"
     print(f"\n  TRACER serve")
@@ -138,8 +142,8 @@ def serve(
     print(f"  endpoints:")
     predict_ex = '{"embedding": [...]}'
     batch_ex = '{"embeddings": [[...], ...]}'
-    print(f"    POST /predict        {predict_ex}")
-    print(f"    POST /predict_batch  {batch_ex}")
+    print(f"  add POST /predict        {predict_ex}")
+    print(f"  add POST /predict_batch  {batch_ex}")
     print("    GET  /health")
     print()
     try:
