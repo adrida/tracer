@@ -31,6 +31,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "generate_html_report": ("tracer.analysis.html_report", "generate_html_report"),
     "generate_sankey": ("tracer.analysis.sankey", "generate_sankey"),
     "serve": ("tracer.runtime.serve", "serve"),
+    "AsyncBatcher": ("tracer.runtime.batching", "AsyncBatcher"),
     "Embedder": ("tracer.embeddings.embedder", "Embedder"),
     "FitConfig": ("tracer.config", "FitConfig"),
     "EmbeddingConfig": ("tracer.config", "EmbeddingConfig"),
@@ -52,6 +53,7 @@ if TYPE_CHECKING:  # static analysers still see the real symbols
     from tracer.analysis.sankey import generate_sankey  # noqa: F401
     from tracer.embeddings.embedder import Embedder  # noqa: F401
     from tracer.runtime.serve import serve  # noqa: F401
+    from tracer.runtime.batching import AsyncBatcher  # noqa: F401
     from tracer.scanner import scan  # noqa: F401
     from tracer.types import (  # noqa: F401
         ArtifactManifest,
@@ -94,6 +96,7 @@ __all__ = [
     "generate_html_report",
     "generate_sankey",
     "serve",
+    "AsyncBatcher",
     "Embedder",
     # Config
     "FitConfig",

@@ -233,6 +233,7 @@ pip install tracer-llm[all]           # everything
 | [Concepts](docs/concepts.md) | Pipeline internals, model zoo, parity gate |
 | [API reference](docs/api.md) | Every function, parameter, and return type |
 | [CLI reference](docs/cli.md) | `tracer fit`, `tracer serve`, `tracer demo`, and more |
+| [High-throughput](docs/highthroughput.md) | Batch fallback, async predict, dynamic micro-batching |
 | [JavaScript / Node.js](docs/javascript.md) | Full integration guide for JS pipelines |
 | [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
 | [Troubleshooting](docs/troubleshooting.md) | `selected_method=null`, coverage drift, embedding-dim mismatch |
