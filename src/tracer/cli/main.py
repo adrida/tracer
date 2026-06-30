@@ -177,6 +177,27 @@ def _cmd_serve(args):
     serve(artifact_dir=args.artifact_dir, host=args.host, port=args.port)
 
 
+def _cmd_watch_export(args):
+    from tracer.traces.watch_export import export_watch_traces
+    from tracer.cli._ui import header, success, info, stat, warn
+
+    header("watch export", f"source={args.source}  output={args.output}")
+
+    result = export_watch_traces(
+        args.source,
+        args.output,
+        skip_errors=not args.include_errors,
+    )
+
+    stat("files", str(result.n_files))
+    stat("spans read", str(result.n_spans_read))
+    stat("exported", str(result.n_exported))
+    if result.n_skipped:
+        warn(f"skipped {result.n_skipped} span(s) (error or empty input/output)")
+    success(f"traces  →  {result.output_path}")
+    info(f"tracer fit {result.output_path}")
+
+
 def _cmd_update(args):
     from tracer.api import update
     from tracer.cli._ui import header, step
@@ -604,6 +625,8 @@ def main():
               tracer report-html .tracer               Open HTML audit report
               tracer sankey .tracer                    Generate Sankey routing diagram
               tracer update new.jsonl                  Refit with new traces
+              tracer watch export                      Export watch spans to traces.jsonl
+              tracer watch export -o out.jsonl         Write fit-ready traces to a path
         """),
     )
     sub = parser.add_subparsers(dest="command")
@@ -703,6 +726,29 @@ def main():
     p_update.add_argument("traces", help="Path to new traces JSONL file")
     p_update.add_argument("--artifact-dir", default=".tracer")
 
+    p_watch = sub.add_parser("watch", help="Work with tracer.watch span recordings")
+    watch_sub = p_watch.add_subparsers(dest="watch_command", required=True)
+    p_watch_export = watch_sub.add_parser(
+        "export",
+        help="Convert watch JSONL spans into fit-ready traces",
+    )
+    p_watch_export.add_argument(
+        "source",
+        nargs="?",
+        default=".tracer/watch",
+        help="Watch JSONL file or directory (default: .tracer/watch)",
+    )
+    p_watch_export.add_argument(
+        "-o", "--output",
+        default="traces.jsonl",
+        help="Output traces JSONL path (default: traces.jsonl)",
+    )
+    p_watch_export.add_argument(
+        "--include-errors",
+        action="store_true",
+        help="Include spans with status=error or empty input/output",
+    )
+
     # Cloud command group: drive Tracer Cloud (app.tracerml.ai) from the CLI,
     # mirroring the web UI. Defined in tracer.cloud.cli.
     from ..cloud import cli as cloud_cli
@@ -725,6 +771,12 @@ def main():
     if args.command == "cloud":
         from ..cloud import cli as cloud_cli
         cloud_cli.run(args)
+    elif args.command == "watch":
+        if args.watch_command == "export":
+            _cmd_watch_export(args)
+        else:
+            parser.print_help()
+            sys.exit(1)
     elif args.command in dispatch:
         dispatch[args.command](args)
     else:
