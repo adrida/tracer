@@ -140,3 +140,12 @@ Cloud. See the `@tracer-llm/watch` package README for details.
 Watched spans map 1:1 to `tracer.types.TraceRecord`, so once you've collected
 real traffic you can fit a routing policy straight from it, or let Tracer Cloud
 auto-optimize one for you. See the [concepts guide](concepts.md).
+
+Watch JSONL uses span fields (`input_text`, `output_text`); `tracer fit` expects
+canonical traces (`input`, `teacher`). Export first:
+
+```bash
+tracer watch export                        # .tracer/watch → traces.jsonl
+tracer watch export .tracer/watch -o out.jsonl
+tracer fit traces.jsonl                    # then fit as usual
+```
