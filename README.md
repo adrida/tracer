@@ -18,7 +18,13 @@ Most LLM-based classification pipelines use a large language model for every sin
 
 TRACER learns the decision boundary between "easy" and "hard" inputs directly from your LLM's own classification traces. It fits a fast, non-LLM surrogate on the easy partition, gates it with a calibrated acceptor, and defers only the uncertain inputs back to the LLM. Every deferred call produces a new trace, which feeds the next refit - coverage grows automatically over time. The result: **90%+ of classification calls routed to traditional ML, with formal parity guarantees against the teacher LLM and a self-improving routing policy**.
 
-<a href="https://star-history.com/#adrida/tracer&Date"><img src="docs/assets/star-history.png" alt="Star History Chart" width="600"></a>
+<a href="https://star-history.com/#adrida/tracer&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=adrida/tracer&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=adrida/tracer&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=adrida/tracer&type=Date" width="600" />
+ </picture>
+</a>
 
 ```bash
 pip install tracer-llm
