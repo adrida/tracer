@@ -254,6 +254,11 @@ Adam Rida, arXiv 2026
 }
 ```
 
+
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=adrida/tracer&type=Date)](https://star-history.com/#adrida/tracer&Date)
+
 ## License
 
 MIT
