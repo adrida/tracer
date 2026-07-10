@@ -290,7 +290,48 @@ def test_span_setters_and_otel_params():
     assert any(p.get("type") == "tool_call" and p.get("name") == "get_balance" for p in parts)
 
 
+def test_decorator_async_records_input_output():
+    import asyncio
+    captured = []
+    w = Watcher("dec_async", sink=_ListSink(captured))
+    @w
+    async def classify_async(t):
+        await asyncio.sleep(0.01)
+        return "label:" + t
+
+    async def run():
+        out = await classify_async("hello")
+        assert out == "label:hello"
+
+    asyncio.run(run())
+    assert len(captured) == 1
+    assert captured[0].input_text == "hello"
+    assert captured[0].output_text == "label:hello"
+    assert captured[0].status == "ok"
+    assert captured[0].latency_ms is not None
+
+
+def test_decorator_async_records_error_and_reraises():
+    import asyncio
+    captured = []
+    w = Watcher("err_async", sink=_ListSink(captured))
+    @w
+    async def boom_async(_t):
+        await asyncio.sleep(0.01)
+        raise ValueError("kaboom")
+
+    async def run():
+        with pytest.raises(ValueError):
+            await boom_async("x")
+
+    asyncio.run(run())
+    assert len(captured) == 1
+    assert captured[0].status == "error"
+    assert "kaboom" in captured[0].error
+
+
 class _ListSink:
     def __init__(self, out): self.out = out
     def emit(self, span): self.out.append(span)
     def close(self): pass
+
