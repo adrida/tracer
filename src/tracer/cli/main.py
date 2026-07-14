@@ -1,10 +1,10 @@
 """TRACER CLI.
 
-    tracer demo
-    tracer fit traces.jsonl [--artifact-dir .tracer] [--target 0.90]
-    tracer report [.tracer]
-    tracer report-html [.tracer]
-    tracer update new_traces.jsonl [--artifact-dir .tracer]
+tracer demo
+tracer fit traces.jsonl [--artifact-dir .tracer] [--target 0.90]
+tracer report [.tracer]
+tracer report-html [.tracer]
+tracer update new_traces.jsonl [--artifact-dir .tracer]
 """
 
 from __future__ import annotations
@@ -17,10 +17,15 @@ import textwrap
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _cmd_scan(args):
     from tracer.scanner import (
-        scan, format_scan, scan_html, load_scan_traces,
-        MIN_SCAN_TRACES, SUGGESTED_SCAN_TRACES,
+        scan,
+        format_scan,
+        scan_html,
+        load_scan_traces,
+        MIN_SCAN_TRACES,
+        SUGGESTED_SCAN_TRACES,
     )
     from tracer.cli._ui import header, step, warn, info
 
@@ -29,19 +34,27 @@ def _cmd_scan(args):
     # Data-volume gate (checked before the embedding step).
     n_traces = len(load_scan_traces(args.traces)[0])
     if n_traces < MIN_SCAN_TRACES and not args.force:
-        warn(f"Only {n_traces:,} traces. tracer scan needs at least "
-             f"{MIN_SCAN_TRACES:,} for a stable read, and ~{SUGGESTED_SCAN_TRACES:,} "
-             f"is the sweet spot.")
-        info("Collect more traces, or re-run with --force to scan anyway on thin "
-             "data (results will be a best-effort floor, not a guarantee).")
+        warn(
+            f"Only {n_traces:,} traces. tracer scan needs at least "
+            f"{MIN_SCAN_TRACES:,} for a stable read, and ~{SUGGESTED_SCAN_TRACES:,} "
+            f"is the sweet spot."
+        )
+        info(
+            "Collect more traces, or re-run with --force to scan anyway on thin "
+            "data (results will be a best-effort floor, not a guarantee)."
+        )
         sys.exit(1)
     if args.force:
-        warn("--force: bypassing the thin-data guard. Clustering will be coarsened to "
-             "concentrate held-out evidence; reported bounds are a best-effort floor, "
-             "not a guarantee.")
+        warn(
+            "--force: bypassing the thin-data guard. Clustering will be coarsened to "
+            "concentrate held-out evidence; reported bounds are a best-effort floor, "
+            "not a guarantee."
+        )
         if n_traces < MIN_SCAN_TRACES:
-            info(f"{n_traces:,} traces is below the {MIN_SCAN_TRACES:,} floor; "
-                 f"~{SUGGESTED_SCAN_TRACES:,} is the sweet spot for a real verdict.")
+            info(
+                f"{n_traces:,} traces is below the {MIN_SCAN_TRACES:,} floor; "
+                f"~{SUGGESTED_SCAN_TRACES:,} is the sweet spot for a real verdict."
+            )
 
     # Embeddings. Default: sentence-transformers locally (the model below).
     # --embeddings reuses a precomputed .npy; --embed-url calls your own HTTP
@@ -49,25 +62,31 @@ def _cmd_scan(args):
     embeddings = None
     if args.embeddings:
         import numpy as _np
+
         embeddings = _np.load(args.embeddings)
     elif args.embed_url:
         from tracer.embeddings.embedder import Embedder
+
         headers = {}
-        for h in (args.embed_header or []):
+        for h in args.embed_header or []:
             k, _, v = h.partition(":")
             headers[k.strip()] = v.strip()
         texts, _ = load_scan_traces(args.traces)
         try:
             with step(f"Embedding {len(texts)} traces via {args.embed_url}"):
                 embeddings = Embedder.from_endpoint(
-                    args.embed_url, headers=headers or None,
-                    input_key=args.embed_input_key, output_key=args.embed_output_key,
+                    args.embed_url,
+                    headers=headers or None,
+                    input_key=args.embed_input_key,
+                    output_key=args.embed_output_key,
                     batch_key=args.embed_batch_key,
                 ).embed(texts)
         except Exception as e:
             warn(f"Embedding endpoint failed ({args.embed_url}): {e}")
-            info("Check the URL, --embed-header auth, and the "
-                 "--embed-input-key/--embed-output-key for your endpoint's shape.")
+            info(
+                "Check the URL, --embed-header auth, and the "
+                "--embed-input-key/--embed-output-key for your endpoint's shape."
+            )
             sys.exit(1)
 
     with step("Clustering + exact bounds"):
@@ -84,19 +103,33 @@ def _cmd_scan(args):
     print(format_scan(result))
     if args.html:
         import pathlib
+
         out = pathlib.Path(args.html)
-        out.write_text(scan_html(result, source_name=pathlib.Path(args.traces).name),
-                       encoding="utf-8")
+        out.write_text(
+            scan_html(result, source_name=pathlib.Path(args.traces).name),
+            encoding="utf-8",
+        )
         print(f"\nHTML report written to {out}")
         if not args.no_open:
             import webbrowser
+
             webbrowser.open(out.resolve().as_uri())
 
 
 def _cmd_fit(args):
     from tracer.api import fit
     from tracer.config import FitConfig
-    from tracer.cli._ui import header, section, step, success, warn, stat, bar_line, hr, _C
+    from tracer.cli._ui import (
+        header,
+        section,
+        step,
+        success,
+        warn,
+        stat,
+        bar_line,
+        hr,
+        _C,
+    )
 
     c = _C()
     header("fit", f"traces={args.traces}  target-TA={args.target:.0%}")
@@ -108,8 +141,9 @@ def _cmd_fit(args):
     skip = {s.strip() for s in (args.skip or "").split(",") if s.strip()}
     if not getattr(args, "trees", False):
         skip |= set(TREES)
-    config = FitConfig(target_teacher_agreement=args.target,
-                       skip_candidates=tuple(sorted(skip)))
+    config = FitConfig(
+        target_teacher_agreement=args.target, skip_candidates=tuple(sorted(skip))
+    )
 
     with step("Fitting routing policy (linear + MLP zoo + calibration)"):
         result = fit(args.traces, artifact_dir=args.artifact_dir, config=config)
@@ -124,17 +158,22 @@ def _cmd_report(args):
     c = _C()
     m = report(args.artifact_dir)
     header("report", args.artifact_dir)
-    print(json.dumps({
-        "version": m.version,
-        "n_traces": m.n_traces,
-        "label_space": m.label_space,
-        "method": m.selected_method,
-        "target_ta": m.target_teacher_agreement,
-        "coverage": m.coverage_cal,
-        "teacher_agreement": m.teacher_agreement_cal,
-        "embedding_dim": m.embedding_dim,
-        "n_retrains": m.n_retrains,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "version": m.version,
+                "n_traces": m.n_traces,
+                "label_space": m.label_space,
+                "method": m.selected_method,
+                "target_ta": m.target_teacher_agreement,
+                "coverage": m.coverage_cal,
+                "teacher_agreement": m.teacher_agreement_cal,
+                "embedding_dim": m.embedding_dim,
+                "n_retrains": m.n_retrains,
+            },
+            indent=2,
+        )
+    )
 
 
 def _cmd_report_html(args):
@@ -174,7 +213,15 @@ def _cmd_sankey(args):
 
 def _cmd_serve(args):
     from tracer.runtime.serve import serve
-    serve(artifact_dir=args.artifact_dir, host=args.host, port=args.port)
+
+    serve(
+        artifact_dir=args.artifact_dir,
+        host=args.host,
+        port=args.port,
+        cors_origin=args.cors_origin,
+        embed_model=args.embed_model,
+        embed_url=args.embed_url,
+    )
 
 
 def _cmd_update(args):
@@ -200,8 +247,19 @@ def _cmd_demo(args):
     from tracer.config import FitConfig
     from tracer.analysis.html_report import generate_html_report
     from tracer.cli._ui import (
-        _C, header, section, stat, bar_line, pair_block,
-        route_line, cost_table, hr, success, info, warn, step,
+        _C,
+        header,
+        section,
+        stat,
+        bar_line,
+        pair_block,
+        route_line,
+        cost_table,
+        hr,
+        success,
+        info,
+        warn,
+        step,
     )
 
     c = _C()
@@ -210,11 +268,13 @@ def _cmd_demo(args):
     # Check relative to this file (tracer/src/tracer/cli/) → tracer/notebooks/data/
     _pkg_root = Path(__file__).resolve().parent.parent.parent.parent
     _b77_traces = _pkg_root / "notebooks" / "data" / "banking77_traces.jsonl"
-    _b77_emb    = _pkg_root / "notebooks" / "data" / "banking77_traces.npy"
+    _b77_emb = _pkg_root / "notebooks" / "data" / "banking77_traces.npy"
     # Also check from cwd (running from repo root)
     if not _b77_traces.exists():
-        _b77_traces = Path.cwd() / "tracer" / "notebooks" / "data" / "banking77_traces.jsonl"
-        _b77_emb    = Path.cwd() / "tracer" / "notebooks" / "data" / "banking77_traces.npy"
+        _b77_traces = (
+            Path.cwd() / "tracer" / "notebooks" / "data" / "banking77_traces.jsonl"
+        )
+        _b77_emb = Path.cwd() / "tracer" / "notebooks" / "data" / "banking77_traces.npy"
 
     use_banking77 = _b77_traces.exists() and _b77_emb.exists()
 
@@ -222,8 +282,8 @@ def _cmd_demo(args):
     demo_out_dir = Path.cwd() / "tracer-demo-output"
     shutil.rmtree(demo_out_dir, ignore_errors=True)
     demo_out_dir.mkdir(parents=True)
-    traces_path  = demo_out_dir / "traces.jsonl"
-    emb_path     = demo_out_dir / "embeddings.npy"
+    traces_path = demo_out_dir / "traces.jsonl"
+    emb_path = demo_out_dir / "embeddings.npy"
     artifact_dir = demo_out_dir / ".tracer"
 
     if use_banking77:
@@ -239,6 +299,7 @@ def _cmd_demo(args):
 
         # Load and subsample
         import random as _rnd
+
         _rnd.seed(42)
         all_lines = _b77_traces.read_text(encoding="utf-8").splitlines()
         sampled_lines = _rnd.sample(all_lines, min(DEMO_N, len(all_lines)))
@@ -257,6 +318,7 @@ def _cmd_demo(args):
 
         # Build label-to-embedding index for live routing
         import json as _json
+
         records = [_json.loads(l) for l in sampled_lines]
         teacher_list = [r["teacher"] for r in records]
         label_to_idx: dict[str, list[int]] = {}
@@ -265,13 +327,17 @@ def _cmd_demo(args):
 
         # Pick 5 real Banking77 queries from the sampled data (diverse intents)
         _target_labels = [
-            "card_arrival", "exchange_rate", "transfer_not_received_by_bank",
-            "card_payment_not_recognised", "change_email",
+            "card_arrival",
+            "exchange_rate",
+            "transfer_not_received_by_bank",
+            "card_payment_not_recognised",
+            "change_email",
         ]
         _all_labels_present = set(teacher_list)
         # Fall back to first 5 available labels if any aren't in this subsample
-        _fallback_labels = [l for l in sorted(_all_labels_present)
-                            if l not in _target_labels]
+        _fallback_labels = [
+            l for l in sorted(_all_labels_present) if l not in _target_labels
+        ]
         _demo_label_list = []
         for lbl in _target_labels:
             if lbl in _all_labels_present:
@@ -284,10 +350,13 @@ def _cmd_demo(args):
             lbl = rec["teacher"]
             if lbl not in _label_text:
                 _label_text[lbl] = rec.get("input", rec.get("text", ""))
-        demo_queries = [(
-            _label_text.get(lbl, lbl),   # actual text from the dataset
-            lbl,
-        ) for lbl in _demo_label_list[:5]]
+        demo_queries = [
+            (
+                _label_text.get(lbl, lbl),  # actual text from the dataset
+                lbl,
+            )
+            for lbl in _demo_label_list[:5]
+        ]
 
         def _pick_emb(preferred_label):
             idxs = label_to_idx.get(preferred_label)
@@ -297,10 +366,9 @@ def _cmd_demo(args):
             first = next(iter(label_to_idx))
             return X[label_to_idx[first][0]], first
 
-        config = FitConfig(target_teacher_agreement=0.92,
-                           frontier_targets=(0.88, 0.92))
+        config = FitConfig(target_teacher_agreement=0.92, frontier_targets=(0.88, 0.92))
         model_zoo_desc = "logreg · rf · et"
-        use_fast_zoo   = True
+        use_fast_zoo = True
 
     else:
         # ── Synthetic fallback: clean 5-class data ─────────────────────────────
@@ -311,11 +379,16 @@ def _cmd_demo(args):
             f"(tip: put Banking77 data in tracer/notebooks/data/ for a real demo)",
         )
         rng = np.random.RandomState(42)
-        intent_names = ["check_balance", "transfer_money", "card_blocked",
-                        "loan_inquiry", "account_settings"]
-        centers    = rng.randn(N_CLS, DIM) * 2.5
+        intent_names = [
+            "check_balance",
+            "transfer_money",
+            "card_blocked",
+            "loan_inquiry",
+            "account_settings",
+        ]
+        centers = rng.randn(N_CLS, DIM) * 2.5
         labels_int = rng.randint(0, N_CLS, size=N)
-        X          = centers[labels_int] + rng.randn(N, DIM) * 1.2
+        X = centers[labels_int] + rng.randn(N, DIM) * 1.2
         teacher_list = [intent_names[i] for i in labels_int]
         ground_truth = list(teacher_list)
         for i in range(N):
@@ -323,32 +396,50 @@ def _cmd_demo(args):
                 teacher_list[i] = intent_names[rng.randint(0, N_CLS)]
 
         sample_texts = {
-            "check_balance":    ["What is my current account balance?",
-                                 "How much money do I have?",
-                                 "Can you check my account balance?"],
-            "transfer_money":   ["I want to send money to my friend",
-                                 "Transfer $500 to savings",
-                                 "How do I wire money abroad?"],
-            "card_blocked":     ["My card is not working",
-                                 "Why was my card blocked?",
-                                 "My card got declined at the store"],
-            "loan_inquiry":     ["What are your loan rates?",
-                                 "I'd like to apply for a personal loan",
-                                 "How much can I borrow?"],
-            "account_settings": ["Change my email address",
-                                 "How do I reset my password?",
-                                 "Update my mailing address"],
+            "check_balance": [
+                "What is my current account balance?",
+                "How much money do I have?",
+                "Can you check my account balance?",
+            ],
+            "transfer_money": [
+                "I want to send money to my friend",
+                "Transfer $500 to savings",
+                "How do I wire money abroad?",
+            ],
+            "card_blocked": [
+                "My card is not working",
+                "Why was my card blocked?",
+                "My card got declined at the store",
+            ],
+            "loan_inquiry": [
+                "What are your loan rates?",
+                "I'd like to apply for a personal loan",
+                "How much can I borrow?",
+            ],
+            "account_settings": [
+                "Change my email address",
+                "How do I reset my password?",
+                "Update my mailing address",
+            ],
         }
         with traces_path.open("w") as f:
             for i in range(N):
-                intent  = ground_truth[i]
-                texts   = sample_texts[intent]
-                text    = texts[i % len(texts)]
+                intent = ground_truth[i]
+                texts = sample_texts[intent]
+                text = texts[i % len(texts)]
                 if i >= len(texts):
                     text = f"{text} (query #{i})"
-                f.write(json.dumps({"input": text, "teacher": teacher_list[i],
-                                    "ground_truth": ground_truth[i],
-                                    "id": str(i)}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "input": text,
+                            "teacher": teacher_list[i],
+                            "ground_truth": ground_truth[i],
+                            "id": str(i),
+                        }
+                    )
+                    + "\n"
+                )
         np.save(emb_path, X.astype(np.float32))
 
         # Build label index for live routing
@@ -358,26 +449,26 @@ def _cmd_demo(args):
 
         demo_queries = [
             ("What is my current account balance?", "check_balance"),
-            ("I want to send money to my friend",   "transfer_money"),
-            ("My card is not working",               "card_blocked"),
-            ("What are your loan rates?",            "loan_inquiry"),
-            ("Change my email address",              "account_settings"),
+            ("I want to send money to my friend", "transfer_money"),
+            ("My card is not working", "card_blocked"),
+            ("What are your loan rates?", "loan_inquiry"),
+            ("Change my email address", "account_settings"),
         ]
 
         def _pick_emb(preferred_label):
             idxs = label_to_idx.get(preferred_label, [0])
             return X[idxs[0]].astype(np.float32), preferred_label
 
-        config = FitConfig(target_teacher_agreement=0.95,
-                           frontier_targets=(0.90, 0.95))
+        config = FitConfig(target_teacher_agreement=0.95, frontier_targets=(0.90, 0.95))
         model_zoo_desc = "logreg · mlp · rf · et"
-        use_fast_zoo   = False
+        use_fast_zoo = False
 
     # ── Fit ───────────────────────────────────────────────────────────────────
     surrogate_log: list[tuple[str, float]] = []
 
     from tracer.fit import surrogate as _s_mod
     from tracer.fit import pipeline as _p_mod
+
     _orig_candidates = _s_mod._candidates
 
     if use_fast_zoo:
@@ -387,18 +478,35 @@ def _cmd_demo(args):
             from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
             from sklearn.pipeline import Pipeline
             from sklearn.preprocessing import StandardScaler
+
             SEED = 42
             return {
-                "logreg_c1":  lambda: Pipeline([("scale", StandardScaler()),
-                    ("clf", LogisticRegression(C=1.0, max_iter=1000,
-                                               random_state=SEED))]),
-                "logreg_c10": lambda: Pipeline([("scale", StandardScaler()),
-                    ("clf", LogisticRegression(C=10.0, max_iter=1000,
-                                               random_state=SEED))]),
-                "rf":  lambda: RandomForestClassifier(n_estimators=150, n_jobs=-1,
-                                                      random_state=SEED),
-                "et":  lambda: ExtraTreesClassifier(n_estimators=150, n_jobs=-1,
-                                                     random_state=SEED),
+                "logreg_c1": lambda: Pipeline(
+                    [
+                        ("scale", StandardScaler()),
+                        (
+                            "clf",
+                            LogisticRegression(C=1.0, max_iter=1000, random_state=SEED),
+                        ),
+                    ]
+                ),
+                "logreg_c10": lambda: Pipeline(
+                    [
+                        ("scale", StandardScaler()),
+                        (
+                            "clf",
+                            LogisticRegression(
+                                C=10.0, max_iter=1000, random_state=SEED
+                            ),
+                        ),
+                    ]
+                ),
+                "rf": lambda: RandomForestClassifier(
+                    n_estimators=150, n_jobs=-1, random_state=SEED
+                ),
+                "et": lambda: ExtraTreesClassifier(
+                    n_estimators=150, n_jobs=-1, random_state=SEED
+                ),
             }
     else:
         # Synthetic: add tree models
@@ -408,21 +516,47 @@ def _cmd_demo(args):
             from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
             from sklearn.pipeline import Pipeline
             from sklearn.preprocessing import StandardScaler
+
             SEED = 42
             return {
-                "logreg_c1":  lambda: Pipeline([("scale", StandardScaler()),
-                    ("clf", LogisticRegression(C=1.0, max_iter=500,
-                                               random_state=SEED))]),
-                "logreg_c10": lambda: Pipeline([("scale", StandardScaler()),
-                    ("clf", LogisticRegression(C=10.0, max_iter=500,
-                                               random_state=SEED))]),
-                "mlp_1h":     lambda: Pipeline([("scale", StandardScaler()),
-                    ("clf", MLPClassifier(hidden_layer_sizes=(256,), max_iter=100,
-                                          early_stopping=True, random_state=SEED))]),
-                "rf":         lambda: RandomForestClassifier(n_estimators=100,
-                                          n_jobs=-1, random_state=SEED),
-                "et":         lambda: ExtraTreesClassifier(n_estimators=100,
-                                          n_jobs=-1, random_state=SEED),
+                "logreg_c1": lambda: Pipeline(
+                    [
+                        ("scale", StandardScaler()),
+                        (
+                            "clf",
+                            LogisticRegression(C=1.0, max_iter=500, random_state=SEED),
+                        ),
+                    ]
+                ),
+                "logreg_c10": lambda: Pipeline(
+                    [
+                        ("scale", StandardScaler()),
+                        (
+                            "clf",
+                            LogisticRegression(C=10.0, max_iter=500, random_state=SEED),
+                        ),
+                    ]
+                ),
+                "mlp_1h": lambda: Pipeline(
+                    [
+                        ("scale", StandardScaler()),
+                        (
+                            "clf",
+                            MLPClassifier(
+                                hidden_layer_sizes=(256,),
+                                max_iter=100,
+                                early_stopping=True,
+                                random_state=SEED,
+                            ),
+                        ),
+                    ]
+                ),
+                "rf": lambda: RandomForestClassifier(
+                    n_estimators=100, n_jobs=-1, random_state=SEED
+                ),
+                "et": lambda: ExtraTreesClassifier(
+                    n_estimators=100, n_jobs=-1, random_state=SEED
+                ),
             }
 
     _orig_search = _p_mod.search_best_surrogate
@@ -430,24 +564,32 @@ def _cmd_demo(args):
     def _patched_search(X_tr, y_tr, X_val, y_val, on_candidate=None, **kwargs):
         # Accept **kwargs so future args (e.g. `skip=`) flow through without
         # needing a matching signature update here.
-        return _orig_search(X_tr, y_tr, X_val, y_val,
-                            on_candidate=on_candidate or (
-                                lambda n, f: surrogate_log.append((n, f))),
-                            **kwargs)
+        return _orig_search(
+            X_tr,
+            y_tr,
+            X_val,
+            y_val,
+            on_candidate=on_candidate or (lambda n, f: surrogate_log.append((n, f))),
+            **kwargs,
+        )
 
     _s_mod._candidates = _demo_candidates
     _p_mod.search_best_surrogate = _patched_search
 
     try:
         with step(f"Training model zoo  ({model_zoo_desc})"):
-            result = fit(traces_path, artifact_dir=artifact_dir,
-                         embeddings=X.astype(np.float32), config=config)
+            result = fit(
+                traces_path,
+                artifact_dir=artifact_dir,
+                embeddings=X.astype(np.float32),
+                config=config,
+            )
     finally:
         _s_mod._candidates = _orig_candidates
         _p_mod.search_best_surrogate = _orig_search
 
     # ── Results ───────────────────────────────────────────────────────────────
-    m  = result.manifest
+    m = result.manifest
     qr = result.qualitative_report
 
     section("Model Selection")
@@ -460,18 +602,33 @@ def _cmd_demo(args):
         best_name = max(seen, key=lambda k: seen[k])
         for name, f1 in seen.items():
             marker = f"  {c.GREEN}← selected{c.RESET}" if name == best_name else ""
-            print(f"    {c.DIM}{name:<18}{c.RESET}  val F1 = {c.BOLD}{f1:.4f}{c.RESET}{marker}")
+            print(
+                f"    {c.DIM}{name:<18}{c.RESET}  val F1 = {c.BOLD}{f1:.4f}{c.RESET}{marker}"
+            )
 
     section("Routing Policy")
     method_color = {"global": "GREEN", "l2d": "CYAN", "rsb": "MAGENTA"}.get(
-        m.selected_method or "", "WHITE")
-    stat("method",     m.selected_method or "none (parity gate blocked)", color=method_color.lower())
-    stat("coverage",   f"{m.coverage_cal:.1%}" if m.coverage_cal else "-",
-         note="of traffic handled by surrogate", color="green")
-    stat("teacher TA", f"{m.teacher_agreement_cal:.3f}" if m.teacher_agreement_cal else "-",
-         note="surrogate matches teacher on handled traffic", color="cyan")
-    stat("traces",     f"{m.n_traces:,}")
-    stat("labels",     str(len(m.label_space)))
+        m.selected_method or "", "WHITE"
+    )
+    stat(
+        "method",
+        m.selected_method or "none (parity gate blocked)",
+        color=method_color.lower(),
+    )
+    stat(
+        "coverage",
+        f"{m.coverage_cal:.1%}" if m.coverage_cal else "-",
+        note="of traffic handled by surrogate",
+        color="green",
+    )
+    stat(
+        "teacher TA",
+        f"{m.teacher_agreement_cal:.3f}" if m.teacher_agreement_cal else "-",
+        note="surrogate matches teacher on handled traffic",
+        color="cyan",
+    )
+    stat("traces", f"{m.n_traces:,}")
+    stat("labels", str(len(m.label_space)))
 
     for note in result.notes:
         if note.startswith("Deployed") or note.startswith("Loaded"):
@@ -486,11 +643,18 @@ def _cmd_demo(args):
             bar_line(s.slice_name.replace("label:", ""), s.handled_rate, s.count)
 
         if qr.boundary_pairs:
-            section(f"Boundary Pairs  ({len(qr.boundary_pairs)} examples - same label, different routing)")
+            section(
+                f"Boundary Pairs  ({len(qr.boundary_pairs)} examples - same label, different routing)"
+            )
             print()
             for bp in qr.boundary_pairs[:4]:
-                pair_block(bp.teacher_label, bp.handled_preview, bp.deferred_preview,
-                           bp.handled_score, bp.deferred_score)
+                pair_block(
+                    bp.teacher_label,
+                    bp.handled_preview,
+                    bp.deferred_preview,
+                    bp.handled_score,
+                    bp.deferred_score,
+                )
 
     # ── Live routing ──────────────────────────────────────────────────────────
     # Pull real examples from the qualitative report: 3 handled + 2 deferred.
@@ -500,8 +664,12 @@ def _cmd_demo(args):
         handled_ex = [e for e in qr.handled_examples if e.local_label][:3]
         deferred_ex = qr.deferred_examples[:2]
         for ex in handled_ex + deferred_ex:
-            route_line(ex.input_preview[:70], ex.decision,
-                       ex.local_label or "", ex.accept_score)
+            route_line(
+                ex.input_preview[:70],
+                ex.decision,
+                ex.local_label or "",
+                ex.accept_score,
+            )
 
     # ── Cost ──────────────────────────────────────────────────────────────────
     if m.coverage_cal:
@@ -527,36 +695,56 @@ def _cmd_demo(args):
     print(f"       {c.CYAN}tracer fit traces.jsonl --target 0.90{c.RESET}")
     print(f"  {c.DIM}3.{c.RESET}  Route with text directly (no manual embedding):")
     print(f"       {c.CYAN}from tracer import Embedder{c.RESET}")
-    print(f"       {c.CYAN}embedder = Embedder.from_sentence_transformers('BAAI/bge-small-en-v1.5'){c.RESET}")
-    print(f"       {c.CYAN}router = tracer.load_router('.tracer', embedder=embedder){c.RESET}")
+    print(
+        f"       {c.CYAN}embedder = Embedder.from_sentence_transformers('BAAI/bge-small-en-v1.5'){c.RESET}"
+    )
+    print(
+        f"       {c.CYAN}router = tracer.load_router('.tracer', embedder=embedder){c.RESET}"
+    )
     print(f"       {c.CYAN}router.predict('What is my balance?'){c.RESET}")
-    print(f"  {c.DIM}4.{c.RESET}  Docs: {c.CYAN}https://github.com/adrida/tracer{c.RESET}")
+    print(
+        f"  {c.DIM}4.{c.RESET}  Docs: {c.CYAN}https://github.com/adrida/tracer{c.RESET}"
+    )
     print()
 
 
 def _print_fit_result(result):
     """Colored summary of a FitResult -- used by fit and update commands."""
     from tracer.cli._ui import (
-        _C, section, stat, bar_line, pair_block, success, warn, info, hr,
+        _C,
+        section,
+        stat,
+        bar_line,
+        pair_block,
+        success,
+        warn,
+        info,
+        hr,
     )
     from tracer.analysis.html_report import generate_html_report
 
-    c  = _C()
-    m  = result.manifest
+    c = _C()
+    m = result.manifest
     qr = result.qualitative_report
 
     section("Routing Policy")
     method_color = {"global": "green", "l2d": "cyan", "rsb": "magenta"}.get(
-        m.selected_method or "", "white")
-    stat("method",     m.selected_method or "none (parity gate blocked)",
-         color=method_color)
+        m.selected_method or "", "white"
+    )
+    stat(
+        "method", m.selected_method or "none (parity gate blocked)", color=method_color
+    )
     if m.coverage_cal is not None:
-        stat("coverage",   f"{m.coverage_cal:.1%}", "handled by surrogate",   color="green")
-        stat("teacher TA", f"{m.teacher_agreement_cal:.3f}",
-             "agreement on handled traffic", color="cyan")
-    stat("traces",     f"{m.n_traces:,}")
-    stat("labels",     str(len(m.label_space)))
-    stat("artifacts",  str(result.artifact_dir))
+        stat("coverage", f"{m.coverage_cal:.1%}", "handled by surrogate", color="green")
+        stat(
+            "teacher TA",
+            f"{m.teacher_agreement_cal:.3f}",
+            "agreement on handled traffic",
+            color="cyan",
+        )
+    stat("traces", f"{m.n_traces:,}")
+    stat("labels", str(len(m.label_space)))
+    stat("artifacts", str(result.artifact_dir))
 
     for note in result.notes:
         if note.startswith("Deployed") or note.startswith("Loaded"):
@@ -572,11 +760,18 @@ def _print_fit_result(result):
 
         if qr.boundary_pairs:
             print()
-            print(f"  {c.BOLD}{c.YELLOW}Boundary Pairs{c.RESET}  {c.DIM}({len(qr.boundary_pairs)} examples){c.RESET}")
+            print(
+                f"  {c.BOLD}{c.YELLOW}Boundary Pairs{c.RESET}  {c.DIM}({len(qr.boundary_pairs)} examples){c.RESET}"
+            )
             print(f"  {hr('·')}")
             for bp in qr.boundary_pairs[:3]:
-                pair_block(bp.teacher_label, bp.handled_preview, bp.deferred_preview,
-                           bp.handled_score, bp.deferred_score)
+                pair_block(
+                    bp.teacher_label,
+                    bp.handled_preview,
+                    bp.deferred_preview,
+                    bp.handled_score,
+                    bp.deferred_score,
+                )
 
     # Generate HTML automatically
     try:
@@ -612,118 +807,219 @@ def main():
 
     p_scan = sub.add_parser(
         "scan",
-        help="Day-one verdict: how much traffic is certifiably ML-shaped, with a 3D map")
+        help="Day-one verdict: how much traffic is certifiably ML-shaped, with a 3D map",
+    )
     p_scan.add_argument("traces", help="Path to traces JSONL file")
-    p_scan.add_argument("--target", type=float, default=0.90,
-                        help="Target label-agreement to certify against (default: 0.90)")
-    p_scan.add_argument("--teacher-price-per-1k", type=float, default=None,
-                        help="Your teacher $ per 1k calls, to estimate savings")
-    p_scan.add_argument("--monthly-calls", type=int, default=None,
-                        help="Monthly call volume, to project monthly savings")
-    p_scan.add_argument("--html", default=None,
-                        help="Also write a self-contained HTML report to this path")
-    p_scan.add_argument("--no-open", action="store_true",
-                        help="Don't open the HTML report in a browser")
+    p_scan.add_argument(
+        "--target",
+        type=float,
+        default=0.90,
+        help="Target label-agreement to certify against (default: 0.90)",
+    )
+    p_scan.add_argument(
+        "--teacher-price-per-1k",
+        type=float,
+        default=None,
+        help="Your teacher $ per 1k calls, to estimate savings",
+    )
+    p_scan.add_argument(
+        "--monthly-calls",
+        type=int,
+        default=None,
+        help="Monthly call volume, to project monthly savings",
+    )
+    p_scan.add_argument(
+        "--html",
+        default=None,
+        help="Also write a self-contained HTML report to this path",
+    )
+    p_scan.add_argument(
+        "--no-open", action="store_true", help="Don't open the HTML report in a browser"
+    )
     # Embeddings: local sentence-transformers by default; precomputed .npy or a
     # custom HTTP endpoint optional.
-    p_scan.add_argument("--embed-model", default="all-MiniLM-L6-v2",
-                        help="Local sentence-transformers model for embeddings "
-                             "(default: all-MiniLM-L6-v2). Needs tracer-llm[embeddings].")
-    p_scan.add_argument("--embeddings", default=None,
-                        help="Path to a precomputed embeddings .npy (skip embedding).")
-    p_scan.add_argument("--embed-url", default=None,
-                        help="Use your own HTTP embedding endpoint instead of a local "
-                             "model. POSTs JSON and reads the embedding from the response.")
-    p_scan.add_argument("--embed-header", action="append", default=None, metavar="K: V",
-                        help="Header for --embed-url (repeatable), e.g. "
-                             "--embed-header 'Authorization: Bearer ...'")
-    p_scan.add_argument("--embed-input-key", default="input",
-                        help="Request JSON key for the text (default: input)")
-    p_scan.add_argument("--embed-output-key", default="embedding",
-                        help="Response JSON key for the vector (default: embedding)")
-    p_scan.add_argument("--embed-batch-key", default=None,
-                        help="If set, send all texts in one request under this key "
-                             "(for batch endpoints).")
-    p_scan.add_argument("--viz-layout", default="pca",
-                        choices=["pca", "umap", "tsne", "auto"],
-                        help="3D layout for the HTML report. pca (default) is a dense "
-                             "connected cloud; umap/tsne separate many-class data into "
-                             "distinct clouds (umap needs umap-learn installed).")
-    p_scan.add_argument("--force", action="store_true",
-                        help="Scan thin data anyway (< 1,000 traces). Coarsens the "
-                             "clustering to concentrate held-out evidence and reports a "
-                             "best-effort floor, not a guarantee. Warns loudly.")
+    p_scan.add_argument(
+        "--embed-model",
+        default="all-MiniLM-L6-v2",
+        help="Local sentence-transformers model for embeddings "
+        "(default: all-MiniLM-L6-v2). Needs tracer-llm[embeddings].",
+    )
+    p_scan.add_argument(
+        "--embeddings",
+        default=None,
+        help="Path to a precomputed embeddings .npy (skip embedding).",
+    )
+    p_scan.add_argument(
+        "--embed-url",
+        default=None,
+        help="Use your own HTTP embedding endpoint instead of a local "
+        "model. POSTs JSON and reads the embedding from the response.",
+    )
+    p_scan.add_argument(
+        "--embed-header",
+        action="append",
+        default=None,
+        metavar="K: V",
+        help="Header for --embed-url (repeatable), e.g. "
+        "--embed-header 'Authorization: Bearer ...'",
+    )
+    p_scan.add_argument(
+        "--embed-input-key",
+        default="input",
+        help="Request JSON key for the text (default: input)",
+    )
+    p_scan.add_argument(
+        "--embed-output-key",
+        default="embedding",
+        help="Response JSON key for the vector (default: embedding)",
+    )
+    p_scan.add_argument(
+        "--embed-batch-key",
+        default=None,
+        help="If set, send all texts in one request under this key "
+        "(for batch endpoints).",
+    )
+    p_scan.add_argument(
+        "--viz-layout",
+        default="pca",
+        choices=["pca", "umap", "tsne", "auto"],
+        help="3D layout for the HTML report. pca (default) is a dense "
+        "connected cloud; umap/tsne separate many-class data into "
+        "distinct clouds (umap needs umap-learn installed).",
+    )
+    p_scan.add_argument(
+        "--force",
+        action="store_true",
+        help="Scan thin data anyway (< 1,000 traces). Coarsens the "
+        "clustering to concentrate held-out evidence and reports a "
+        "best-effort floor, not a guarantee. Warns loudly.",
+    )
 
     p_fit = sub.add_parser("fit", help="Fit a routing policy from traces")
     p_fit.add_argument("traces", help="Path to traces JSONL file")
-    p_fit.add_argument("--artifact-dir", default=".tracer",
-                       help="Output artifact directory (default: .tracer)")
-    p_fit.add_argument("--target", type=float, default=0.90,
-                       help="Target teacher agreement, e.g. 0.90 (default)")
-    p_fit.add_argument("--trees", action="store_true",
-                       help="Add the tree-based surrogates (decision tree, random "
-                            "forest, extra-trees, gradient boosting). Off by default: "
-                            "they are slower and the linear/MLP heads are usually enough.")
-    p_fit.add_argument("--skip", default="",
-                       help="Comma-separated surrogate models to skip from the zoo "
-                            "(e.g. dt,rf,et,gbt,mlp_1h).")
+    p_fit.add_argument(
+        "--artifact-dir",
+        default=".tracer",
+        help="Output artifact directory (default: .tracer)",
+    )
+    p_fit.add_argument(
+        "--target",
+        type=float,
+        default=0.90,
+        help="Target teacher agreement, e.g. 0.90 (default)",
+    )
+    p_fit.add_argument(
+        "--trees",
+        action="store_true",
+        help="Add the tree-based surrogates (decision tree, random "
+        "forest, extra-trees, gradient boosting). Off by default: "
+        "they are slower and the linear/MLP heads are usually enough.",
+    )
+    p_fit.add_argument(
+        "--skip",
+        default="",
+        help="Comma-separated surrogate models to skip from the zoo "
+        "(e.g. dt,rf,et,gbt,mlp_1h).",
+    )
 
     p_report = sub.add_parser("report", help="Show artifact manifest as JSON")
     p_report.add_argument("artifact_dir", nargs="?", default=".tracer")
 
-    p_html = sub.add_parser("report-html",
-                             help="Generate HTML audit report and open in browser")
+    p_html = sub.add_parser(
+        "report-html", help="Generate HTML audit report and open in browser"
+    )
     p_html.add_argument("artifact_dir", nargs="?", default=".tracer")
-    p_html.add_argument("--output", default=None,
-                        help="Output path (default: <artifact_dir>/report.html)")
-    p_html.add_argument("--no-open", action="store_true",
-                        help="Don't open browser automatically")
+    p_html.add_argument(
+        "--output",
+        default=None,
+        help="Output path (default: <artifact_dir>/report.html)",
+    )
+    p_html.add_argument(
+        "--no-open", action="store_true", help="Don't open browser automatically"
+    )
 
-    p_sankey = sub.add_parser("sankey",
-                              help="Generate a Sankey routing diagram (requires plotly)")
+    p_sankey = sub.add_parser(
+        "sankey", help="Generate a Sankey routing diagram (requires plotly)"
+    )
     p_sankey.add_argument("artifact_dir", nargs="?", default=".tracer")
-    p_sankey.add_argument("--output", default=None,
-                          help="Output path (default: <artifact_dir>/sankey.<format>)")
-    p_sankey.add_argument("--format", default="html", choices=["html", "png", "svg"],
-                          help="Output format (default: html)")
-    p_sankey.add_argument("--top-k", type=int, default=15,
-                          help="Number of top labels to show (default: 15)")
-    p_sankey.add_argument("--no-open", action="store_true",
-                          help="Don't open browser automatically (html only)")
+    p_sankey.add_argument(
+        "--output",
+        default=None,
+        help="Output path (default: <artifact_dir>/sankey.<format>)",
+    )
+    p_sankey.add_argument(
+        "--format",
+        default="html",
+        choices=["html", "png", "svg"],
+        help="Output format (default: html)",
+    )
+    p_sankey.add_argument(
+        "--top-k",
+        type=int,
+        default=15,
+        help="Number of top labels to show (default: 15)",
+    )
+    p_sankey.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Don't open browser automatically (html only)",
+    )
 
-    p_serve = sub.add_parser("serve",
-                              help="Start a prediction HTTP server")
-    p_serve.add_argument("artifact_dir", nargs="?", default=".tracer",
-                         help="Artifact directory (default: .tracer)")
-    p_serve.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    p_serve = sub.add_parser("serve", help="Start a prediction HTTP server")
+    p_serve.add_argument(
+        "artifact_dir",
+        nargs="?",
+        default=".tracer",
+        help="Artifact directory (default: .tracer)",
+    )
+    p_serve.add_argument(
+        "--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)"
+    )
+    p_serve.add_argument("--cors-origin", default="*", help="CORS origin (default: *)")
+    p_serve.add_argument(
+        "--embed-model",
+        default=None,
+        help="Local sentence-transformers model name to enable text predict.",
+    )
+    p_serve.add_argument(
+        "--embed-url",
+        default=None,
+        help="HTTP endpoint to call for embedding text queries",
+    )
     p_serve.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
 
-    p_update = sub.add_parser("update",
-                               help="Refit with new traces (continual learning)")
+    p_update = sub.add_parser(
+        "update", help="Refit with new traces (continual learning)"
+    )
     p_update.add_argument("traces", help="Path to new traces JSONL file")
     p_update.add_argument("--artifact-dir", default=".tracer")
 
     # Cloud command group: drive Tracer Cloud (app.tracerml.ai) from the CLI,
     # mirroring the web UI. Defined in tracer.cloud.cli.
     from ..cloud import cli as cloud_cli
-    p_cloud = sub.add_parser("cloud", help="Drive Tracer Cloud from the terminal (login, tracers, train, route…)")
+
+    p_cloud = sub.add_parser(
+        "cloud",
+        help="Drive Tracer Cloud from the terminal (login, tracers, train, route…)",
+    )
     cloud_cli.build_parser(p_cloud)
 
     args = parser.parse_args()
 
     dispatch = {
-        "scan":        _cmd_scan,
-        "fit":         _cmd_fit,
-        "report":      _cmd_report,
+        "scan": _cmd_scan,
+        "fit": _cmd_fit,
+        "report": _cmd_report,
         "report-html": _cmd_report_html,
-        "sankey":      _cmd_sankey,
-        "serve":       _cmd_serve,
-        "update":      _cmd_update,
-        "demo":        _cmd_demo,
+        "sankey": _cmd_sankey,
+        "serve": _cmd_serve,
+        "update": _cmd_update,
+        "demo": _cmd_demo,
     }
 
     if args.command == "cloud":
         from ..cloud import cli as cloud_cli
+
         cloud_cli.run(args)
     elif args.command in dispatch:
         dispatch[args.command](args)

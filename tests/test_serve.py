@@ -20,12 +20,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import tracer
+from tracer.api import fit
 from tracer.runtime import serve as serve_mod
 from tracer.policy.artifacts import load_manifest
 from tracer.runtime.router import Router
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
+
 
 def _make_traces(tmpdir, n=240, dim=16, n_classes=3, noise=0.05):
     """Synthetic, well-separated traces so fit() deploys a surrogate."""
@@ -41,8 +43,10 @@ def _make_traces(tmpdir, n=240, dim=16, n_classes=3, noise=0.05):
     path = Path(tmpdir) / "traces.jsonl"
     with path.open("w") as f:
         for i in range(n):
-            f.write(json.dumps({"input": f"text {i}", "teacher": teacher[i],
-                                "id": str(i)}) + "\n")
+            f.write(
+                json.dumps({"input": f"text {i}", "teacher": teacher[i], "id": str(i)})
+                + "\n"
+            )
     return path, X.astype(np.float32)
 
 
@@ -51,10 +55,12 @@ def fitted_artifact(tmp_path_factory):
     tmpdir = tmp_path_factory.mktemp("serve_artifact")
     traces_path, X = _make_traces(tmpdir)
     artifact_dir = Path(tmpdir) / ".tracer"
-    result = tracer.fit(traces_path, artifact_dir, embeddings=X,
-                        config=tracer.FitConfig(verbose=False))
-    assert result.manifest.selected_method is not None, \
+    result = fit(
+        traces_path, artifact_dir, embeddings=X, config=tracer.FitConfig(verbose=False)
+    )
+    assert result.manifest.selected_method is not None, (
         "test fixture expected a deployable policy"
+    )
     return artifact_dir, X
 
 
@@ -77,14 +83,19 @@ def server(fitted_artifact):
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+
 def _get(base, path):
     with urlopen(f"{base}{path}", timeout=5) as resp:
         return resp.status, json.loads(resp.read())
 
 
 def _post(base, path, payload):
-    req = Request(f"{base}{path}", data=json.dumps(payload).encode(),
-                  headers={"Content-Type": "application/json"}, method="POST")
+    req = Request(
+        f"{base}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
         with urlopen(req, timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -93,6 +104,7 @@ def _post(base, path, payload):
 
 
 # ── /health ───────────────────────────────────────────────────────────────────
+
 
 def test_health(server, fitted_artifact):
     status, body = _get(server, "/health")
@@ -104,6 +116,7 @@ def test_health(server, fitted_artifact):
 
 
 # ── /predict ──────────────────────────────────────────────────────────────────
+
 
 def test_predict_returns_routing_decision(server, fitted_artifact):
     _, X = fitted_artifact
@@ -128,6 +141,7 @@ def test_predict_wrong_dim_is_500(server, fitted_artifact):
 
 # ── /predict_batch ────────────────────────────────────────────────────────────
 
+
 def test_predict_batch(server, fitted_artifact):
     _, X = fitted_artifact
     batch = X[:5].tolist()
@@ -147,6 +161,7 @@ def test_predict_batch_missing_field_is_400(server):
 
 # ── Routing / unknown paths ───────────────────────────────────────────────────
 
+
 def test_unknown_get_path_is_404(server):
     try:
         _get(server, "/nope")
@@ -160,3 +175,57 @@ def test_unknown_get_path_is_404(server):
 def test_unknown_post_path_is_404(server):
     status, body = _post(server, "/nope", {"x": 1})
     assert status == 404
+
+
+# ── CORS & Preflight Tests ────────────────────────────────────────────────────
+
+
+def test_cors_preflight_and_headers(server):
+    # 1. Test preflight OPTIONS request
+    req = Request(f"{server}/predict", method="OPTIONS")
+    with urlopen(req, timeout=5) as resp:
+        assert resp.status == 200
+        assert resp.headers.get("Access-Control-Allow-Origin") == "*"
+        assert "POST" in resp.headers.get("Access-Control-Allow-Methods", "")
+
+    # 2. Reconfigure _cors_origin to a specific origin
+    from tracer.runtime import serve as serve_mod
+
+    original_origin = serve_mod._cors_origin
+
+    try:
+        serve_mod._cors_origin = "https://example.com"
+        req_get = Request(f"{server}/health", method="GET")
+        with urlopen(req_get, timeout=5) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("Access-Control-Allow-Origin") == "https://example.com"
+    finally:
+        serve_mod._cors_origin = original_origin
+
+
+def test_predict_raw_text(server, fitted_artifact):
+    artifact_dir, X = fitted_artifact
+    dim = X.shape[1]
+
+    from tracer.runtime import serve as serve_mod
+    from tracer.runtime.router import Router
+    from tests.test_router import _FakeEmbedder
+
+    # Temporary mount a Router with a FakeEmbedder to allow text prediction
+    original_router = serve_mod._router
+    try:
+        serve_mod._router = Router.load(artifact_dir, embedder=_FakeEmbedder(dim))
+
+        # Predict single test
+        status, body = _post(server, "/predict", {"text": "hello raw text"})
+        assert status == 200
+        assert body["decision"] in ("handled", "deferred")
+
+        # Predict batch texts
+        status, body_batch = _post(
+            server, "/predict_batch", {"texts": ["hello", "bye"]}
+        )
+        assert status == 200
+        assert len(body_batch["labels"]) == 2
+    finally:
+        serve_mod._router = original_router

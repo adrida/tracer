@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
 
@@ -23,23 +23,35 @@ import numpy as np
 _router = None
 _manifest = None
 
+_cors_origin = "*"
+
 
 class _Handler(BaseHTTPRequestHandler):
-
     def do_GET(self):
         if self.path == "/health":
-            self._json_response(200, {
-                "status": "ok",
-                "method": _manifest.selected_method,
-                "coverage": _manifest.coverage_cal,
-                "teacher_agreement": _manifest.teacher_agreement_cal,
-                "n_labels": len(_manifest.label_space),
-                "n_traces": _manifest.n_traces,
-            })
+            self._json_response(
+                200,
+                {
+                    "status": "ok",
+                    "method": _manifest.selected_method,
+                    "coverage": _manifest.coverage_cal,
+                    "teacher_agreement": _manifest.teacher_agreement_cal,
+                    "n_labels": len(_manifest.label_space),
+                    "n_traces": _manifest.n_traces,
+                },
+            )
         else:
-            self._json_response(404, {"error": "not found",
-                                       "endpoints": ["GET /health", "POST /predict",
-                                                      "POST /predict_batch"]})
+            self._json_response(
+                404,
+                {
+                    "error": "not found",
+                    "endpoints": [
+                        "GET /health",
+                        "POST /predict",
+                        "POST /predict_batch",
+                    ],
+                },
+            )
 
     def do_POST(self):
         try:
@@ -55,27 +67,43 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._json_response(404, {"error": "not found"})
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", _cors_origin)
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
+
     def _handle_predict(self, body: dict):
         emb = body.get("embedding")
-        if emb is None:
-            self._json_response(400, {"error": "missing 'embedding' field"})
+        text = body.get("text")
+        if emb is None and text is None:
+            self._json_response(400, {"error": "missing 'embedding' or 'text' field"})
             return
         try:
-            x = np.asarray(emb, dtype=np.float32)
-            out = _router.predict(x)
+            if text is not None:
+                # The router will automatically compute embeddings if an embedder is loaded
+                out = _router.predict(text)
+            else:
+                x = np.asarray(emb, dtype=np.float32)
+                out = _router.predict(x)
             self._json_response(200, out)
         except Exception as e:
             self._json_response(500, {"error": str(e)})
 
     def _handle_predict_batch(self, body: dict):
         embs = body.get("embeddings")
-        if embs is None:
-            self._json_response(400, {"error": "missing 'embeddings' field"})
+        texts = body.get("texts")
+        if embs is None and texts is None:
+            self._json_response(400, {"error": "missing 'embeddings' or 'texts' field"})
             return
         try:
-            X = np.asarray(embs, dtype=np.float32)
-            out = _router.predict_batch(X)
-            # Convert numpy arrays to lists for JSON serialization
+            if texts is not None:
+                out = _router.predict_batch(texts)
+            else:
+                X = np.asarray(embs, dtype=np.float32)
+                out = _router.predict_batch(X)
             result = {
                 "labels": out["labels"],
                 "decisions": out["decisions"],
@@ -97,7 +125,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", _cors_origin)
         self.end_headers()
         self.wfile.write(body)
 
@@ -111,6 +139,9 @@ def serve(
     artifact_dir: Union[str, Path] = ".tracer",
     host: str = "0.0.0.0",
     port: int = 8000,
+    cors_origin: str = "*",
+    embed_model: Optional[str] = None,
+    embed_url: Optional[str] = None,
 ):
     """Start a prediction server for a fitted TRACER policy.
 
@@ -119,15 +150,26 @@ def serve(
     artifact_dir : path to .tracer/ directory
     host : bind address (default: 0.0.0.0)
     port : listen port (default: 8000)
+    cors_origin : CORS origin for API (default: "*")
+    embed_model : Optional model name for embeddings (e.g. "BAAI/bge-small-en-v1.5")
+    embed_url : Optional service URL for embedding service
     """
-    global _router, _manifest
+    global _router, _manifest, _cors_origin
+    _cors_origin = cors_origin
 
     from tracer.runtime.router import Router
     from tracer.policy.artifacts import load_manifest
+    from tracer.embeddings.embedder import Embedder
 
     artifact_dir = Path(artifact_dir)
     _manifest = load_manifest(artifact_dir / "manifest.json")
-    _router = Router.load(artifact_dir)
+    # Load embedder if model or url is configured
+    embedder = None
+    if embed_model:
+        embedder = Embedder.from_sentence_transformers(embed_model)
+    elif embed_url:
+        embedder = Embedder.from_endpoint(embed_url)
+    _router = Router.load(artifact_dir, embedder=embedder)
 
     server = HTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
