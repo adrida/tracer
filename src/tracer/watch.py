@@ -581,7 +581,27 @@ class Watcher:
 
     # -- decorator -------------------------------------------------------- #
     def __call__(self, fn: Callable) -> Callable:
+        import asyncio
         import functools
+
+        # Async functions return a coroutine immediately, so a sync wrapper would
+        # close the span before the body runs -- recording ~0 latency, no error,
+        # and the un-awaited coroutine as "output". Await it instead.
+        if asyncio.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                span = self._begin(self.extract_input(args, kwargs))
+                try:
+                    result = await fn(*args, **kwargs)
+                except Exception as e:
+                    span.status = "error"
+                    span.error = str(e)
+                    self._finish(span)
+                    raise
+                self._capture(span, result)
+                return result
+
+            return async_wrapper
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -593,16 +613,19 @@ class Watcher:
                 span.error = str(e)
                 self._finish(span)
                 raise
-            # Auto-capture model / tokens / finish_reason / tool calls if the
-            # function returned a provider response object; otherwise fall back
-            # to the plain output extractor.
-            extract_response(span, result)
-            if not span.output_text:
-                span.output_text = self.extract_output(result)
-            self._finish(span)
+            self._capture(span, result)
             return result
 
         return wrapper
+
+    def _capture(self, span: GenAISpan, result: Any) -> None:
+        # Auto-capture model / tokens / finish_reason / tool calls if the
+        # function returned a provider response object; otherwise fall back
+        # to the plain output extractor.
+        extract_response(span, result)
+        if not span.output_text:
+            span.output_text = self.extract_output(result)
+        self._finish(span)
 
     # -- context manager -------------------------------------------------- #
     def span(
