@@ -1,6 +1,7 @@
 """Unit tests for tracer.watch: spans, sinks, the decorator/context manager,
 env-driven sink composition, and the Tracer Cloud sink (mapping + prod-safety).
 All hermetic: no network, temp dirs only."""
+import asyncio
 import json
 import os
 
@@ -72,6 +73,34 @@ def test_decorator_records_error_and_reraises(tmp_path):
         raise ValueError("kaboom")
     with pytest.raises(ValueError):
         boom("x")
+    assert captured[0].status == "error"
+    assert "kaboom" in captured[0].error
+
+
+def test_decorator_traces_async_function(tmp_path):
+    captured = []
+    w = Watcher("async", sink=_ListSink(captured))
+    @w
+    async def classify(t):
+        await asyncio.sleep(0.01)
+        return "label:" + t
+    out = asyncio.run(classify("hello"))
+    assert out == "label:hello"
+    assert len(captured) == 1
+    assert captured[0].input_text == "hello"
+    assert captured[0].output_text == "label:hello"
+    assert captured[0].status == "ok"
+    assert captured[0].latency_ms is not None and captured[0].latency_ms > 0
+
+
+def test_decorator_records_error_in_async_function(tmp_path):
+    captured = []
+    w = Watcher("asyncerr", sink=_ListSink(captured))
+    @w
+    async def boom(_t):
+        raise ValueError("kaboom")
+    with pytest.raises(ValueError):
+        asyncio.run(boom("x"))
     assert captured[0].status == "error"
     assert "kaboom" in captured[0].error
 
