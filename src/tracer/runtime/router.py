@@ -131,6 +131,12 @@ class Router:
         dict with keys: label, decision ("handled"/"deferred"), accept_score, stage
         """
         embedding = self._to_embedding(input)
+        if embedding.ndim != 1:
+            raise ValueError(
+                f"Expected a 1-D embedding vector of shape (dim,), got a "
+                f"{embedding.ndim}-D array with shape {embedding.shape}. "
+                f"Pass a single vector, or use predict_batch() for multiple rows."
+            )
         expected_dim = self.manifest.embedding_dim
         if expected_dim is not None and embedding.shape[-1] != expected_dim:
             raise ValueError(
