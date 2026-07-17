@@ -6,10 +6,12 @@ port (127.0.0.1:0) in a background thread and shut down cleanly after the
 module's tests run, so nothing leaks between test files.
 """
 
+import io
 import json
 import threading
 from http.server import HTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -160,3 +162,45 @@ def test_unknown_get_path_is_404(server):
 def test_unknown_post_path_is_404(server):
     status, body = _post(server, "/nope", {"x": 1})
     assert status == 404
+
+
+# ── Client disconnect (regression for #64) ────────────────────────────────────
+
+class _DisconnectedClient(io.BytesIO):
+    """A wfile whose peer has gone away: every write raises, like a dead socket."""
+
+    def write(self, _):
+        raise BrokenPipeError("client hung up mid-response")
+
+
+def test_json_response_survives_client_disconnect(monkeypatch):
+    """A client that hangs up mid-response must not crash the handler.
+
+    Triggering a real BrokenPipeError over loopback is timing-dependent (small
+    responses sit in the kernel buffer and the write succeeds even after the
+    peer is gone), so this drives the handler against a wfile that raises the
+    same error the kernel would. Before the fix the exception escapes do_GET and
+    tears down the request with a stack trace; after it, the handler swallows it
+    and marks the connection closed.
+    """
+    manifest = SimpleNamespace(
+        selected_method="global",
+        coverage_cal=0.9,
+        teacher_agreement_cal=0.95,
+        label_space=["a", "b", "c"],
+        n_traces=42,
+    )
+    monkeypatch.setattr(serve_mod, "_manifest", manifest)
+
+    handler = serve_mod._Handler.__new__(serve_mod._Handler)
+    handler.wfile = _DisconnectedClient()
+    handler.rfile = io.BytesIO()
+    handler.request_version = "HTTP/1.1"
+    handler.requestline = "GET /health HTTP/1.1"
+    handler.command = "GET"
+    handler.path = "/health"
+    handler.close_connection = False
+
+    handler.do_GET()
+
+    assert handler.close_connection is True
