@@ -114,6 +114,22 @@ def test_predict_batch_wrong_dim_raises(router):
         router.predict_batch(wrong)
 
 
+# ── Malformed rank (regression for #69) ───────────────────────────────────────
+
+def test_predict_scalar_raises_valueerror(router):
+    # A 0-D scalar has an empty shape, so the old shape[-1] dimension check
+    # blew up with a bare IndexError instead of a helpful message.
+    with pytest.raises(ValueError, match="(?i)1-d embedding"):
+        router.predict(np.float32(0.5))
+
+
+def test_predict_2d_embedding_raises_valueerror(router):
+    # A single (1, dim) row would otherwise be silently reshaped and routed;
+    # predict() takes one vector, predict_batch() takes many.
+    with pytest.raises(ValueError, match="(?i)1-d embedding"):
+        router.predict(np.ones((1, 16), dtype=np.float32))
+
+
 # ── Text input without embedder ──────────────────────────────────────────────
 
 def test_predict_text_without_embedder_raises(router):
