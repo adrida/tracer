@@ -185,7 +185,11 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
                 continue
             k_acc = int((preds[acc] == y_teacher[acc]).sum())
             if _cp_lower(k_acc, n_acc, alpha) >= target_ta:
-                best = (float(t), k_acc, n_acc)  # keep lowest-threshold (max coverage)
+                # Coverage is monotonically non-increasing in t, so the first
+                # qualifying threshold is the highest-coverage one. Stop here:
+                # continuing would overwrite it with the lowest-coverage candidate.
+                best = (float(t), k_acc, n_acc)
+                break
         if best is None:
             return None
         t, k_acc, n_acc = best
