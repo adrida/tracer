@@ -52,7 +52,7 @@ def fit_ood_gate(X_train: np.ndarray, pred_labels, k: int = 10,
             "global_thr": global_thr, "per_label_thr": per_label}
 
 
-def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate) -> np.ndarray:
+def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate, nn=None) -> np.ndarray:
     """Boolean array, True where a query is out-of-distribution (should defer).
 
     Uses the same mean-k-NN-distance rule the gate was calibrated with, comparing
@@ -60,11 +60,19 @@ def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate) -> np
     X_query = np.asarray(X_query, dtype=np.float32)
     if gate is None or X_train is None or len(X_train) == 0 or len(X_query) == 0:
         return np.zeros(len(X_query), dtype=bool)
-    from sklearn.neighbors import NearestNeighbors
+    
     k = int(min(gate.get("k", 10), len(X_train)))
     if k < 1:
         return np.zeros(len(X_query), dtype=bool)
-    nn = NearestNeighbors(n_neighbors=k).fit(np.asarray(X_train, dtype=np.float32))
+
+    if nn is not None:
+        if getattr(nn, "n_neighbors", None) != k:
+            nn = None
+
+    if nn is None:
+        from sklearn.neighbors import NearestNeighbors
+        nn = NearestNeighbors(n_neighbors=k).fit(np.asarray(X_train, dtype=np.float32))
+
     d, _ = nn.kneighbors(X_query)
     mean_d = d.mean(axis=1)
     per = gate.get("per_label_thr", {})
