@@ -70,20 +70,35 @@ class _Handler(BaseHTTPRequestHandler):
     def _handle_predict_batch(self, body: dict):
         embs = body.get("embeddings")
         if embs is None:
-            self._json_response(400, {"error": "missing 'embeddings' field"})
+            try:
+                self._json_response(400, {"error": "missing 'embeddings' field"})
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             return
+
         try:
             X = np.asarray(embs, dtype=np.float32)
             out = _router.predict_batch(X)
+
             # Convert numpy arrays to lists for JSON serialization
             result = {
                 "labels": out["labels"],
                 "decisions": out["decisions"],
                 "handled": out["handled"].tolist(),
             }
+
             self._json_response(200, result)
+
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected before receiving the response.
+            return
+
         except Exception as e:
-            self._json_response(500, {"error": str(e)})
+            try:
+                self._json_response(500, {"error": str(e)})
+            except (BrokenPipeError, ConnectionResetError):
+                # Client already disconnected; nothing to do.
+                pass
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -94,12 +109,16 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _json_response(self, code: int, data: dict):
         body = json.dumps(data, default=str).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Client closed the connection.
+            pass
 
     def log_message(self, fmt, *args):
         # Quiet logging - only errors
