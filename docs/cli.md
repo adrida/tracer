@@ -16,6 +16,7 @@ tracer <command> [options]
 | `tracer report-html` | Generate an HTML report and open it |
 | `tracer sankey` | Generate a Sankey routing flow diagram |
 | `tracer serve` | Start a prediction HTTP server |
+| `tracer watch export` | Convert watch JSONL spans into fit-ready traces |
 
 ---
 
@@ -211,6 +212,37 @@ tracer update new.jsonl --artifact-dir my-policy
 2. All traces (old + new) are used to refit the policy
 3. The method, threshold, and artifacts are all updated
 4. Coverage typically grows with each update
+
+---
+
+## `tracer watch export`
+
+Convert `tracer.watch` span JSONL into fit-ready traces (`input` / `teacher`).
+
+```bash
+tracer watch export [<source>] [-o <path>] [--include-errors]
+```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `source` | `.tracer/watch` | Watch JSONL file or directory of `*.jsonl` files |
+| `-o`, `--output` | `traces.jsonl` | Output traces JSONL path |
+| `--include-errors` | off | Include spans with `status=error` or empty input/output |
+
+**Examples:**
+
+```bash
+# Export all watch files under .tracer/watch
+tracer watch export
+
+# Export one watcher, then fit
+tracer watch export .tracer/watch/support.jsonl -o support_traces.jsonl
+tracer fit support_traces.jsonl
+```
+
+By default, errored spans and rows with empty input or output text are skipped.
 
 ---
 
