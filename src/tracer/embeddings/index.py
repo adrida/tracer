@@ -24,11 +24,18 @@ class EmbeddingIndex:
 
         X = embeddings.astype(np.float32, copy=False)
         if metric == "cosine":
-            faiss.normalize_L2(X)
-            idx = faiss.IndexFlatIP(X.shape[1])
+            # Normalise a copy for the index only. faiss.normalize_L2 works in
+            # place, and X may alias the caller's array; normalising it here
+            # would silently rescale the user's embeddings and, worse, persist
+            # them L2-normalised so a later update() would vstack unit-norm
+            # history with raw new vectors and refit on an inconsistent space.
+            Xn = np.ascontiguousarray(X).copy()
+            faiss.normalize_L2(Xn)
+            idx = faiss.IndexFlatIP(Xn.shape[1])
+            idx.add(Xn)
         else:
             idx = faiss.IndexFlatL2(X.shape[1])
-        idx.add(X)
+            idx.add(np.ascontiguousarray(X))
         return cls(embeddings, index=idx)
 
     def search(self, query: np.ndarray, k: int = 5):
