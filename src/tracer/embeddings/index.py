@@ -11,16 +11,17 @@ import numpy as np
 class EmbeddingIndex:
     """Thin wrapper around a FAISS index for trace retrieval."""
 
-    def __init__(self, embeddings: np.ndarray, index=None):
+    def __init__(self, embeddings: np.ndarray, index=None, metric: str = "l2"):
         self.embeddings = embeddings.astype(np.float32, copy=False)
         self._index = index
+        self.metric = metric
 
     @classmethod
     def build(cls, embeddings: np.ndarray, metric: str = "cosine") -> "EmbeddingIndex":
         try:
             import faiss
         except ImportError:
-            return cls(embeddings, index=None)
+            return cls(embeddings, index=None, metric=metric)
 
         X = embeddings.astype(np.float32, copy=False)
         if metric == "cosine":
@@ -29,24 +30,39 @@ class EmbeddingIndex:
         else:
             idx = faiss.IndexFlatL2(X.shape[1])
         idx.add(X)
-        return cls(embeddings, index=idx)
+        return cls(embeddings, index=idx, metric=metric)
 
     def search(self, query: np.ndarray, k: int = 5):
         if self._index is None:
-            dists = np.linalg.norm(self.embeddings - query.reshape(1, -1), axis=1)
-            topk = np.argsort(dists)[:k]
-            return topk, dists[topk]
+            q = query.astype(np.float32).reshape(1, -1)
+            X = self.embeddings
+            if self.metric == "cosine":
+                # Cosine fallback: normalize and compute inner product
+                norm_q = np.linalg.norm(q)
+                if norm_q > 1e-12:
+                    q = q / norm_q
+                # build() already normalized self.embeddings for metric="cosine"
+                sims = np.dot(X, q.T).flatten()
+                topk = np.argsort(-sims)[:k]
+                return topk, sims[topk]
+            else:
+                dists = np.linalg.norm(X - q, axis=1)
+                topk = np.argsort(dists)[:k]
+                return topk, dists[topk]
+
         q = query.astype(np.float32).reshape(1, -1)
-        try:
-            import faiss
-            faiss.normalize_L2(q)
-        except ImportError:
-            pass
+        if self.metric == "cosine":
+            try:
+                import faiss
+                faiss.normalize_L2(q)
+            except ImportError:
+                pass
         D, I = self._index.search(q, k)
         return I[0], D[0]
 
     def save(self, path: Path) -> None:
         np.save(path.with_suffix(".embeddings.npy"), self.embeddings)
+        path.with_suffix(".metric").write_text(self.metric, encoding="utf-8")
         if self._index is not None:
             try:
                 import faiss
@@ -57,6 +73,10 @@ class EmbeddingIndex:
     @classmethod
     def load(cls, path: Path) -> "EmbeddingIndex":
         emb = np.load(path.with_suffix(".embeddings.npy"))
+        metric = "l2"
+        metric_path = path.with_suffix(".metric")
+        if metric_path.exists():
+            metric = metric_path.read_text(encoding="utf-8").strip()
         idx = None
         faiss_path = path.with_suffix(".faiss")
         if faiss_path.exists():
@@ -65,7 +85,7 @@ class EmbeddingIndex:
                 idx = faiss.read_index(str(faiss_path))
             except ImportError:
                 pass
-        return cls(emb, index=idx)
+        return cls(emb, index=idx, metric=metric)
 
 
 def embed_texts(

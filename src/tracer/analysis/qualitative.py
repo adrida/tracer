@@ -85,6 +85,13 @@ def build_qualitative_report(
     top_k : number of representative examples per group
     """
     n = len(texts)
+    if n == 0:
+        return QualitativeReport(
+            summary="No traces provided.",
+            coverage=0.0,
+            teacher_agreement_handled=0.0,
+        )
+
     n_handled = sum(1 for d in decisions if d == "handled")
     n_deferred = n - n_handled
     coverage = n_handled / max(n, 1)
