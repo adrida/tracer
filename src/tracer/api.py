@@ -14,21 +14,20 @@ import time
 from pathlib import Path
 from typing import Callable, Optional, Union
 
-import joblib
 import numpy as np
 
 from tracer.analysis.qualitative import build_qualitative_report
 from tracer.config import FitConfig
 from tracer.embeddings.index import EmbeddingIndex
 from tracer.fit.pipeline import (
-    evaluate_pipeline, fit_frontier, route_pipeline, apply_stage, _accept_scores, _predict,
+    fit_frontier, route_pipeline, apply_stage,
 )
 from tracer.policy.artifacts import (
-    load_manifest, load_pipeline, save_pipeline, save_qualitative_report, write_manifest,
+    load_manifest, save_pipeline, save_qualitative_report, write_manifest,
 )
 from tracer.runtime.router import Router
 from tracer.traces.loader import load_traces
-from tracer.types import ArtifactManifest, FitResult, QualitativeReport
+from tracer.types import ArtifactManifest, FitResult
 
 
 def fit(
