@@ -3,8 +3,19 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Optional, Union
+
+# Labels are embedded into Plotly HTML/JS. Strip markup metacharacters so a
+# poisoned teacher label cannot break out of the inline <script> payload.
+_UNSAFE_LABEL = re.compile(r"""[<>&"'`\\]""")
+
+
+def _safe_node_label(text: str, *, max_len: int = 120) -> str:
+    cleaned = _UNSAFE_LABEL.sub("", str(text))
+    cleaned = "".join(ch for ch in cleaned if ch.isprintable() or ch in " \t")
+    return cleaned[:max_len] if cleaned else "(label)"
 
 
 _PALETTE = [
@@ -131,15 +142,18 @@ def _build_sankey_figure(manifest: dict, qr: dict, top_k: int, dark: bool):
     n_other_labels = len(manifest.get("label_space", [])) - n_top
     has_other = (other_handled + other_deferred) > 0.5
 
-    node_labels = [s["slice_name"].replace("label:", "").replace("_", " ") for s in top]
+    node_labels = [
+        _safe_node_label(s["slice_name"].replace("label:", "").replace("_", " "))
+        for s in top
+    ]
     if has_other:
-        node_labels.append(f"other ({n_other_labels} labels)")
+        node_labels.append(_safe_node_label(f"other ({n_other_labels} labels)"))
     surrogate_idx = len(node_labels)
     teacher_idx = surrogate_idx + 1
     pct_h = coverage * 100
     pct_d = (1 - coverage) * 100
-    node_labels.append(f"Surrogate  ({pct_h:.0f}%)")
-    node_labels.append(f"Teacher / LLM  ({pct_d:.0f}%)")
+    node_labels.append(_safe_node_label(f"Surrogate  ({pct_h:.0f}%)"))
+    node_labels.append(_safe_node_label(f"Teacher / LLM  ({pct_d:.0f}%)"))
 
     if dark:
         _palette_dark = [

@@ -41,6 +41,14 @@ def save_pipeline(artifact_dir: Path, pipeline: dict, label_space: list) -> str:
 
 
 def load_pipeline(artifact_dir: Path) -> dict:
+    """Load ``pipeline.joblib`` via joblib (pickle).
+
+    Warning
+    -------
+    Joblib uses pickle under the hood. Loading an untrusted ``.tracer``
+    directory can execute arbitrary code. Only load artifacts produced by
+    your own ``tracer.fit`` / ``tracer.update`` (or another fully trusted source).
+    """
     return joblib.load(artifact_dir / "pipeline.joblib")
 
 

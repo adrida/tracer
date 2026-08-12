@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import json
+from html import escape as _html_escape
 from pathlib import Path
 from typing import Union
+
+# Pin Plotly (no "latest"); only injected when a sankey div is rendered.
+_PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
+
+
+def _esc(value) -> str:
+    """HTML-escape dynamic report fields (XSS-safe)."""
+    return _html_escape("" if value is None else str(value), quote=True)
 
 
 _CSS = """
@@ -222,11 +231,26 @@ def generate_html_report(
     method      = manifest_raw.get("selected_method") or "none"
     coverage    = manifest_raw.get("coverage_cal")
     ta          = manifest_raw.get("teacher_agreement_cal")
-    n_traces    = manifest_raw.get("n_traces", 0)
-    n_labels    = len(manifest_raw.get("label_space", []))
-    emb_dim     = manifest_raw.get("embedding_dim")
-    target_ta   = manifest_raw.get("target_teacher_agreement", 0.90)
-    method_cls  = _METHOD_BADGE.get(method, "b-gray")
+    # Coerce numerics — manifest fields are untrusted if the artifact is.
+    try:
+        n_traces = int(manifest_raw.get("n_traces", 0) or 0)
+    except (TypeError, ValueError):
+        n_traces = 0
+    label_space = manifest_raw.get("label_space") or []
+    n_labels = len(label_space) if isinstance(label_space, list) else 0
+    try:
+        emb_dim = int(manifest_raw["embedding_dim"]) if manifest_raw.get("embedding_dim") is not None else None
+    except (TypeError, ValueError):
+        emb_dim = None
+    try:
+        target_ta = float(manifest_raw.get("target_teacher_agreement", 0.90) or 0.90)
+    except (TypeError, ValueError):
+        target_ta = 0.90
+    # Only allow known badge classes (manifest method is untrusted input).
+    method_cls  = _METHOD_BADGE.get(method) or "b-gray"
+    if method_cls not in ("b-green", "b-blue", "b-purple", "b-gray"):
+        method_cls = "b-gray"
+    emb_dim_disp = str(emb_dim) if emb_dim is not None else "?"
 
     cov_exact = (coverage or 0) * 100
     defer_exact = 100 - cov_exact
@@ -261,10 +285,7 @@ def generate_html_report(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tracer routing report</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
 <style>{_CSS}</style>
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
 <div class="page">
@@ -278,7 +299,7 @@ def generate_html_report(
 <h1>Routing Policy</h1>
 <div class="subtitle">
   {n_traces:,} traces &nbsp;·&nbsp; {n_labels} labels
-  &nbsp;·&nbsp; {emb_dim}-dim embeddings
+  &nbsp;·&nbsp; {_esc(emb_dim_disp)}-dim embeddings
   &nbsp;·&nbsp; target TA = {target_ta:.0%}
 </div>
 
@@ -296,7 +317,7 @@ def generate_html_report(
   <div class="card purple">
     <div class="card-label">Method</div>
     <div class="card-value" style="font-size:1.2rem;margin-top:10px">
-      <span class="badge {method_cls}">{method.upper()}</span>
+      <span class="badge {method_cls}">{_esc(method.upper())}</span>
     </div>
     <div class="card-sub">selected pipeline</div>
   </div>
@@ -355,6 +376,7 @@ def generate_html_report(
             from tracer.analysis.sankey import generate_sankey_div
             sankey_div = generate_sankey_div(artifact_dir)
             if sankey_div:
+                html += f'<script src="{_PLOTLY_CDN}"></script>\n'
                 html += f"""
 <div class="section">
   <h2>Routing Flow</h2>
@@ -389,7 +411,7 @@ def generate_html_report(
     <tbody>
 """
         for s in sorted(label_slices, key=lambda x: -x["handled_rate"]):
-            label = s["slice_name"].replace("label:", "")
+            label = _esc(s["slice_name"].replace("label:", ""))
             hr_v  = s["handled_rate"]
             ta_s  = s.get("teacher_agreement_handled")
             ta_str = f"{ta_s:.1%}" if ta_s is not None else "-"
@@ -397,8 +419,8 @@ def generate_html_report(
                 f'<tr><td><code style="color:#8b949e;font-size:.82rem">{label}</code></td>'
                 f'<td><b style="color:#f0f6fc">{hr_v:.1%}</b></td>'
                 f'<td>{_bar_html(hr_v)}</td>'
-                f'<td style="color:#8b949e">{s["count"]}</td>'
-                f'<td style="color:#8b949e">{ta_str}</td></tr>\n'
+                f'<td style="color:#8b949e">{int(s["count"])}</td>'
+                f'<td style="color:#8b949e">{_esc(ta_str)}</td></tr>\n'
             )
         html += "    </tbody>\n  </table>\n</div>\n"
 
@@ -408,10 +430,10 @@ def generate_html_report(
             html += '<tr><th>Bucket</th><th>Coverage</th><th style="width:130px"></th><th>Count</th></tr>\n'
             for s in length_slices:
                 html += (
-                    f'<tr><td>{s["slice_name"]}</td>'
+                    f'<tr><td>{_esc(s["slice_name"])}</td>'
                     f'<td><b style="color:#f0f6fc">{s["handled_rate"]:.1%}</b></td>'
                     f'<td>{_bar_html(s["handled_rate"])}</td>'
-                    f'<td style="color:#8b949e">{s["count"]}</td></tr>\n'
+                    f'<td style="color:#8b949e">{int(s["count"])}</td></tr>\n'
                 )
             html += '</table>\n</div>\n'
 
@@ -423,14 +445,14 @@ def generate_html_report(
                 hs = _score_str(p.get("handled_score"))
                 ds = _score_str(p.get("deferred_score"))
                 html += f"""<div class="pair">
-  <div class="pair-intent">{p["teacher_label"]}</div>
+  <div class="pair-intent">{_esc(p["teacher_label"])}</div>
   <div class="pair-row">
     <span class="pair-tag pt-local">SURROGATE</span>
-    <span class="pair-text">{p["handled_preview"]}</span>{hs}
+    <span class="pair-text">{_esc(p["handled_preview"])}</span>{hs}
   </div>
   <div class="pair-row">
     <span class="pair-tag pt-deferred">→ LLM</span>
-    <span class="pair-text">{p["deferred_preview"]}</span>{ds}
+    <span class="pair-text">{_esc(p["deferred_preview"])}</span>{ds}
   </div>
 </div>\n"""
             html += '</div>\n'
@@ -443,18 +465,18 @@ def generate_html_report(
             for ex in handled_ex[:6]:
                 score_str = f'<span class="ex-score">score {ex["accept_score"]:.2f}</span>' if ex.get("accept_score") else ""
                 html += (f'<div class="ex-item handled">'
-                         f'<div class="ex-text">{ex["input_preview"]}</div>'
+                         f'<div class="ex-text">{_esc(ex["input_preview"])}</div>'
                          f'<div class="ex-meta">'
-                         f'<span class="ex-label">{ex["teacher_label"]}</span>'
+                         f'<span class="ex-label">{_esc(ex["teacher_label"])}</span>'
                          f'{score_str}</div></div>\n')
             html += '</div>\n'
 
             html += '<div class="ex-col">\n<h3>Deferred to teacher</h3>\n'
             for ex in deferred_ex[:6]:
                 html += (f'<div class="ex-item deferred">'
-                         f'<div class="ex-text">{ex["input_preview"]}</div>'
+                         f'<div class="ex-text">{_esc(ex["input_preview"])}</div>'
                          f'<div class="ex-meta">'
-                         f'<span class="ex-label">{ex["teacher_label"]}</span>'
+                         f'<span class="ex-label">{_esc(ex["teacher_label"])}</span>'
                          f'</div></div>\n')
             html += '</div>\n'
 
@@ -470,7 +492,7 @@ def generate_html_report(
                 prev_bar = int(d["previous_handled_rate"] * 60)
                 cur_bar  = int(d["current_handled_rate"] * 60)
                 html += (
-                    f'<tr><td><code style="color:#8b949e;font-size:.82rem">{d["label"]}</code></td>'
+                    f'<tr><td><code style="color:#8b949e;font-size:.82rem">{_esc(d["label"])}</code></td>'
                     f'<td style="color:#8b949e">{d["previous_handled_rate"]:.1%}'
                     f'<div class="delta-bar-bg"><div class="delta-bar-fill" style="width:{prev_bar}px"></div></div></td>'
                     f'<td style="color:#f0f6fc">{d["current_handled_rate"]:.1%}'

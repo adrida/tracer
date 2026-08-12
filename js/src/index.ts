@@ -372,16 +372,35 @@ function getEnv(name: string): string | undefined {
   return g.process?.env?.[name];
 }
 
+const WATCH_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/** Allowlist watcher names used as filenames (no path separators / traversal). */
+export function safeWatchName(name: string): string {
+  if (typeof name !== "string" || !WATCH_NAME_RE.test(name)) {
+    throw new Error(
+      `invalid watch name ${JSON.stringify(name)}: use 1-128 chars of [A-Za-z0-9._-], starting with alphanumeric`,
+    );
+  }
+  return name;
+}
+
 /** Append spans as JSONL to `<dir>/<name>.jsonl`. No network, no key. */
 export class LocalFileSink implements Sink {
   readonly path: string;
   constructor(name: string, dir: string = ".tracer/watch") {
-    this.path = path.join(dir, `${name}.jsonl`);
+    const safe = safeWatchName(name);
+    const root = path.resolve(dir);
     try {
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(root, { recursive: true });
     } catch (e) {
-      debugLog(`could not create dir ${dir}: ${String(e)}`);
+      debugLog(`could not create dir ${root}: ${String(e)}`);
     }
+    const full = path.resolve(root, `${safe}.jsonl`);
+    const rel = path.relative(root, full);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error(`watch path escapes directory: ${JSON.stringify(name)}`);
+    }
+    this.path = full;
   }
 
   emit(span: GenAISpan): void {

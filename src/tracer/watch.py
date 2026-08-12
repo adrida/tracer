@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextvars
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -200,12 +201,35 @@ class Sink(Protocol):
     def close(self) -> None: ...
 
 
+_WATCH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _safe_watch_name(name: str) -> str:
+    """Allowlist watcher names used as filenames (no path separators / traversal)."""
+    if not isinstance(name, str) or not _WATCH_NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"invalid watch name {name!r}: use 1-128 chars of [A-Za-z0-9._-], "
+            "starting with alphanumeric (no path separators)"
+        )
+    return name
+
+
 class LocalFileSink:
     """Append spans as JSONL to ``<dir>/<name>.jsonl``. No network, no key."""
 
     def __init__(self, name: str, dir: str = ".tracer/watch") -> None:
-        self.path = os.path.join(dir, f"{name}.jsonl")
-        os.makedirs(dir, exist_ok=True)
+        safe = _safe_watch_name(name)
+        root = os.path.realpath(dir)
+        os.makedirs(root, exist_ok=True)
+        path = os.path.realpath(os.path.join(root, f"{safe}.jsonl"))
+        # commonpath raises ValueError across drives (Windows); treat as escape.
+        try:
+            under_root = os.path.commonpath([root, path]) == root
+        except ValueError:
+            under_root = False
+        if not under_root:
+            raise ValueError(f"watch path escapes directory: {name!r}")
+        self.path = path
         self._lock = threading.Lock()
 
     def emit(self, span: GenAISpan) -> None:
