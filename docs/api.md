@@ -478,6 +478,8 @@ class FitConfig:
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
     seed: int = 42
+    per_class_calibration: bool = False
+    min_class_calibration_n: int = 25
 ```
 
 | Field | Description |
@@ -487,6 +489,8 @@ class FitConfig:
 | `min_deploy_coverage` | Minimum coverage fraction to consider a method deployable. |
 | `max_fit_labels` | Subsample to this size for efficiency on large datasets (stratified). |
 | `seed` | Random seed for reproducibility. |
+| `per_class_calibration` | Calibrate one accept threshold per predicted class instead of one pooled threshold, so the parity bar holds within every handled class. A high-volume class can no longer mask a minority class routed below target. Classes that cannot certify the target defer to the teacher. |
+| `min_class_calibration_n` | With `per_class_calibration`, classes with fewer calibration rows than this are refused (always deferred) rather than certified on insufficient evidence. |
 
 **Example:**
 

@@ -237,6 +237,71 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
     return None
 
 
+def _calibrate_threshold_per_class(scores, preds, y_teacher, target_ta, alpha=0.1,
+                                   min_accept=10, min_class_n=25):
+    """Per-predicted-class thresholds: hold the parity target within every class.
+
+    A single global threshold certifies the *pooled* accepted agreement, so a
+    high-volume class can mask a minority class that is routed to the surrogate
+    well below target (issue #38: the pooled mean does not group by class).
+    This calibrates one threshold per predicted class using the same
+    select/verify machinery as `_calibrate_threshold`, and refuses classes
+    rather than guessing:
+
+      - a class with fewer than `min_class_n` calibration rows is refused
+        (`insufficient_calibration`): the data cannot certify the target at any
+        threshold, so that class's traffic defers to the teacher;
+      - a class where no threshold clears the target is refused
+        (`no_certifiable_threshold`) and likewise defers.
+
+    Returns None when no class certifies. Otherwise returns pooled metrics plus
+    `thresholds` (predicted class -> accept threshold) and a `per_class` report.
+    The pooled guarantee follows from the per-class ones: every accepted row
+    belongs to some certified class.
+    """
+    scores = np.asarray(scores, dtype=float)
+    preds = np.asarray(preds)
+    y_teacher = np.asarray(y_teacher)
+    thresholds: dict = {}
+    per_class: dict = {}
+    for cls in np.unique(preds):
+        mask = preds == cls
+        n_cls = int(mask.sum())
+        key = int(cls)
+        if n_cls < min_class_n:
+            per_class[key] = {"status": "insufficient_calibration", "n_cal": n_cls,
+                              "min_class_n": int(min_class_n)}
+            continue
+        ti = _calibrate_threshold(scores[mask], preds[mask], y_teacher[mask],
+                                  target_ta, alpha=alpha, min_accept=min_accept)
+        if ti is None:
+            per_class[key] = {"status": "no_certifiable_threshold", "n_cal": n_cls}
+            continue
+        thresholds[key] = float(ti["threshold"])
+        per_class[key] = {"status": "ok", "n_cal": n_cls,
+                          "threshold": float(ti["threshold"]),
+                          "teacher_agreement": ti["teacher_agreement"],
+                          "teacher_agreement_lower": ti["teacher_agreement_lower"],
+                          "coverage": ti["coverage"], "holdout": ti["holdout"]}
+    if not thresholds:
+        return None
+    accept = _apply_per_class_thresholds(scores, preds, thresholds)
+    n_acc = int(accept.sum())
+    k_acc = int((preds[accept] == y_teacher[accept]).sum())
+    return {"thresholds": thresholds, "per_class": per_class,
+            "teacher_agreement": float(k_acc / n_acc) if n_acc else 0.0,
+            "teacher_agreement_lower": _cp_lower(k_acc, n_acc, alpha),
+            "coverage": float(accept.mean()),
+            "holdout": all(v["holdout"] for v in per_class.values()
+                           if v.get("status") == "ok")}
+
+
+def _apply_per_class_thresholds(scores, preds, thresholds: dict) -> np.ndarray:
+    """Accept mask under per-class thresholds; classes without one always defer."""
+    cut = np.array([thresholds.get(int(p), np.inf) for p in preds], dtype=float)
+    return np.asarray(scores, dtype=float) >= cut
+
+
 def _predict(clf, X):
     probs = clf.predict_proba(X)
     preds = probs.argmax(axis=1).astype(int)
@@ -244,11 +309,17 @@ def _predict(clf, X):
 
 
 def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-                 skip: Iterable[str] = ()):
+                 skip: Iterable[str] = (),
+                 per_class: bool = False, min_class_n: int = 25):
     """Global pipeline: one surrogate, accept all if the agreement lower bound
     clears the target. Gating on the Clopper-Pearson lower bound (not the raw
     point estimate) stops a small or lucky calibration set from certifying an
-    accept-all deploy that then breaks the contract on real traffic."""
+    accept-all deploy that then breaks the contract on real traffic.
+
+    With `per_class`, accept-all must certify every predicted class, not just
+    the pool: an accept-all deploy has no defer path, so a single class below
+    target (or too small to certify) fails the whole method rather than being
+    averaged away by high-volume classes (issue #38)."""
     log = log or _noop_log
     if len(np.unique(split["y_train"])) < 2 or len(split["X_val"]) == 0:
         return {"method": "global", "stages": [], "summary": {"status": "insufficient_data", "coverage_cal_total": 0.0}}
@@ -274,6 +345,21 @@ def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = No
             "val_teacher_f1": val_m["teacher_f1"],
             "teacher_agreement_cal_total": ta_cal,
             "teacher_agreement_lower_cal_total": ta_lower, "coverage_cal_total": 0.0}}
+    if per_class:
+        for cls in np.unique(preds_cal):
+            mask = preds_cal == cls
+            n_c = int(mask.sum())
+            k_c = int((preds_cal[mask] == split["y_cal"][mask]).sum())
+            if n_c < min_class_n or _cp_lower(k_c, n_c, alpha) < target_ta:
+                log(f"  build_global: class {int(cls)} fails per-class gate "
+                    f"(n={n_c}, lower={_cp_lower(k_c, n_c, alpha):.3f})")
+                return {"method": "global", "stages": [], "summary": {
+                    "status": "below_target_per_class", "model_name": name,
+                    "failing_class": int(cls), "failing_class_n_cal": n_c,
+                    "val_teacher_f1": val_m["teacher_f1"],
+                    "teacher_agreement_cal_total": ta_cal,
+                    "teacher_agreement_lower_cal_total": ta_lower,
+                    "coverage_cal_total": 0.0}}
 
     stage = {"stage_name": "global", "model_name": name, "clf": clf,
              "accept_all": True, "teacher_agreement_cal": ta_cal,
@@ -299,7 +385,8 @@ def _candidate_log(log: LogFn) -> Callable[..., None]:
 
 def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, stage_name,
                            alpha: float = 0.1,
-                           log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                           log: Optional[LogFn] = None, skip: Iterable[str] = (),
+                           per_class: bool = False, min_class_n: int = 25):
     log = log or _noop_log
     if len(np.unique(y_tr)) < 2 or len(X_val) == 0 or len(X_cal) == 0:
         return None
@@ -315,29 +402,42 @@ def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, st
     preds_cal, probs_cal = _predict(clf, X_cal)
     acceptor = _fit_acceptor(probs_val, preds_val, y_val)
     scores_cal = _accept_scores(acceptor, probs_cal)
-    ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta, alpha)
+    if per_class:
+        ti = _calibrate_threshold_per_class(scores_cal, preds_cal, y_cal, target_ta,
+                                            alpha=alpha, min_class_n=min_class_n)
+    else:
+        ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta, alpha)
     if ti is None:
         return None
-    return {"stage_name": stage_name, "model_name": name, "clf": clf,
-            "acceptor": acceptor, "accept_all": False, "threshold": ti["threshold"],
-            "score_name": "predicted_teacher_match" if acceptor else "max_prob",
-            "teacher_agreement_cal": ti["teacher_agreement"],
-            "teacher_agreement_lower_cal": ti["teacher_agreement_lower"],
-            "coverage_cal": ti["coverage"],
-            "holdout_verified": ti["holdout"],
-            "val_teacher_f1": val_m["teacher_f1"],
-            "val_teacher_acc": val_m["teacher_acc"]}
+    stage = {"stage_name": stage_name, "model_name": name, "clf": clf,
+             "acceptor": acceptor, "accept_all": False,
+             "threshold": ti.get("threshold"),
+             "score_name": "predicted_teacher_match" if acceptor else "max_prob",
+             "teacher_agreement_cal": ti["teacher_agreement"],
+             "teacher_agreement_lower_cal": ti["teacher_agreement_lower"],
+             "coverage_cal": ti["coverage"],
+             "holdout_verified": ti["holdout"],
+             "val_teacher_f1": val_m["teacher_f1"],
+             "val_teacher_acc": val_m["teacher_acc"]}
+    if per_class:
+        stage["per_class_thresholds"] = ti["thresholds"]
+        stage["per_class_cal"] = ti["per_class"]
+        n_refused = sum(1 for v in ti["per_class"].values() if v["status"] != "ok")
+        log(f"  {stage_name}: per-class calibration certified "
+            f"{len(ti['thresholds'])} classes, refused {n_refused}")
+    return stage
 
 
 def build_l2d(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (),
+              per_class: bool = False, min_class_n: int = 25):
     """L2D: surrogate + acceptor-gated deferral."""
     log = log or _noop_log
     log(f"build_l2d: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        alpha=alpha, log=log, skip=skip)
+        alpha=alpha, log=log, skip=skip, per_class=per_class, min_class_n=min_class_n)
     if s1 is None:
         return {"method": "l2d", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -351,14 +451,15 @@ def build_l2d(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
 
 
 def build_rsb(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (),
+              per_class: bool = False, min_class_n: int = 25):
     """RSB: residual two-stage cascade."""
     log = log or _noop_log
     log(f"build_rsb: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        alpha=alpha, log=log, skip=skip)
+        alpha=alpha, log=log, skip=skip, per_class=per_class, min_class_n=min_class_n)
     if s1 is None:
         return {"method": "rsb", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -375,7 +476,7 @@ def build_rsb(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
             split["X_val"][rej_val], split["y_val"][rej_val],
             split["X_cal"][rej_cal], split["y_cal"][rej_cal],
             target_ta, "stage_2",
-            alpha=alpha, log=log, skip=skip)
+            alpha=alpha, log=log, skip=skip, per_class=per_class, min_class_n=min_class_n)
         if s2 is not None:
             stages.append(s2)
 
@@ -399,7 +500,11 @@ def apply_stage(stage: dict, X: np.ndarray):
     if stage.get("accept_all"):
         return preds, np.ones(len(X), dtype=bool), np.ones(len(X))
     scores = _accept_scores(stage.get("acceptor"), probs)
-    accept = scores >= stage["threshold"]
+    per_class_thresholds = stage.get("per_class_thresholds")
+    if per_class_thresholds is not None:
+        accept = _apply_per_class_thresholds(scores, preds, per_class_thresholds)
+    else:
+        accept = scores >= stage["threshold"]
     return preds, accept, scores
 
 
@@ -455,7 +560,8 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
 
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
                  alpha: float = 0.1,
-                 log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                 log: Optional[LogFn] = None, skip: Iterable[str] = (),
+                 per_class: bool = False, min_class_n: int = 25):
     """Build global/l2d/rsb for each target TA, return best per target.
 
     `alpha` is the confidence level for the deployment lower bound: a candidate
@@ -465,7 +571,8 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
         f"max_fit_labels={max_fit_labels} alpha={alpha}"
-        + (f" skip={tuple(skip)}" if tuple(skip) else ""))
+        + (f" skip={tuple(skip)}" if tuple(skip) else "")
+        + (f" per_class=True min_class_n={min_class_n}" if per_class else ""))
     X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels)
     split = _split_buffer(X_fit, y_fit)
     log(f"fit_frontier: split -> {len(split['X_train'])} train / "
@@ -476,7 +583,8 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
     for target in sorted(set(float(t) for t in targets)):
         candidates = []
         for method_name, builder in builders.items():
-            pipeline = builder(split, target, alpha=alpha, log=log, skip=skip)
+            pipeline = builder(split, target, alpha=alpha, log=log, skip=skip,
+                               per_class=per_class, min_class_n=min_class_n)
             pipeline["summary"]["method"] = method_name
             if pipeline["summary"].get("coverage_cal_total", 0.0) < min_coverage:
                 if pipeline["summary"].get("status") == "ok":

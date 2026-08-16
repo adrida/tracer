@@ -36,6 +36,14 @@ class FitConfig:
     # on ~3k × 22-class embedding inputs). See `tracer.fit.surrogate._candidates`
     # for the full set of names.
     skip_candidates: Tuple[str, ...] = ()
+    # Calibrate a separate accept threshold per predicted class instead of one
+    # pooled threshold. Holds the parity target within every handled class, so
+    # a high-volume class cannot mask a minority class routed below target.
+    # Classes with fewer than `min_class_calibration_n` calibration rows are
+    # refused (their traffic always defers to the teacher) rather than
+    # certified on evidence that cannot support the target.
+    per_class_calibration: bool = False
+    min_class_calibration_n: int = 25
 
     def __post_init__(self) -> None:
         if not 0.0 < self.target_teacher_agreement <= 1.0:
@@ -54,3 +62,7 @@ class FitConfig:
                 f"{self.min_deploy_coverage}")
         if self.max_fit_labels <= 0:
             raise ValueError(f"max_fit_labels must be > 0, got {self.max_fit_labels}")
+        if self.min_class_calibration_n < 1:
+            raise ValueError(
+                "min_class_calibration_n must be >= 1, got "
+                f"{self.min_class_calibration_n}")

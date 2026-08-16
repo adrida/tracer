@@ -3,6 +3,24 @@
 All notable changes to TRACER are recorded here. This project follows semantic
 versioning.
 
+## Unreleased
+
+### Added
+- `FitConfig.per_class_calibration` (default off): calibrate one accept
+  threshold per predicted class so the parity target holds within every
+  handled class, not just pooled (#38). Classes that cannot certify the
+  target defer to the teacher, and classes with fewer than
+  `FitConfig.min_class_calibration_n` calibration rows are refused rather
+  than certified on insufficient evidence. In per-class mode the `global`
+  accept-all method must also certify every predicted class.
+
+### Fixed
+- The small-calibration-set fallback in `_calibrate_threshold` selected the
+  highest passing threshold (minimum coverage) instead of the lowest
+  (maximum coverage), starving coverage on trace files whose calibration
+  split fell under 40 rows and creating a discontinuity at the n=40 branch
+  boundary (#77).
+
 ## 0.3.3 (2026-06)
 
 ### Fixed
