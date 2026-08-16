@@ -177,6 +177,11 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
             holdout = True
     if not holdout:
         # Too little data to hold out: single-set CP lower-bound gate over all rows.
+        # Thresholds are walked in ascending order, so the first passing threshold
+        # is the lowest one and carries maximum coverage; stop there. (Overwriting
+        # `best` on every pass kept the highest passing threshold instead, i.e.
+        # minimum coverage, and produced the discontinuity at the n=40 branch
+        # boundary — issue #77.)
         best = None
         for t in np.unique(np.sort(scores)):
             acc = scores >= t
@@ -185,7 +190,8 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
                 continue
             k_acc = int((preds[acc] == y_teacher[acc]).sum())
             if _cp_lower(k_acc, n_acc, alpha) >= target_ta:
-                best = (float(t), k_acc, n_acc)  # keep lowest-threshold (max coverage)
+                best = (float(t), k_acc, n_acc)  # lowest passing threshold (max coverage)
+                break
         if best is None:
             return None
         t, k_acc, n_acc = best
