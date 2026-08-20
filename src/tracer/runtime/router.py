@@ -101,7 +101,13 @@ class Router:
                     "      router = tracer.load_router('.tracer', embedder=embedder)"
                 )
             return self.embedder.embed_one(input)
-        return np.asarray(input, dtype=np.float32)
+        arr = np.asarray(input, dtype=np.float32)
+        if arr.ndim == 0:
+            raise ValueError(
+                "embedding must be a 1-D array, got a scalar. "
+                "Reshape it to (1, -1) or pass a list."
+            )
+        return arr
 
     def _to_embeddings(self, inputs) -> np.ndarray:
         """Convert inputs (list of texts or 2D array) to (n, dim) float32."""
