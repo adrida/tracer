@@ -201,7 +201,7 @@ tracer serve .tracer --port 8000
 
 ## Paper
 
-A research paper is in preparation covering the formal parity guarantees, ablation studies across multiple datasets (Banking77, CLINC-150, MNLI, WildGuardMix, RAGTruth), limitations, and tooling to reproduce all experiments. It will be linked here upon publication.
+The published paper is **TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification** by Adam Rida, available on [arXiv](https://arxiv.org/abs/2604.14531). The paper reports experiments on Banking77, CLINC150, and MNLI, including the empirical parity gate, interpretability artifacts, and limitations.
 
 ---
 

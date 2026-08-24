@@ -150,4 +150,4 @@ Every fit produces a structured explanation of the routing policy. The slice and
 
 ## Paper
 
-A research paper is in preparation with formal proofs of the parity guarantees, ablation studies across Banking77, CLINC-150, MNLI, WildGuardMix, and RAGTruth, discussion of limitations, and tooling to reproduce all experiments. Link will appear here upon publication.
+The published paper is **TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification** by Adam Rida, available on [arXiv](https://arxiv.org/abs/2604.14531). It reports experiments on Banking77, CLINC150, and MNLI, including the empirical parity gate, interpretability artifacts, and limitations.

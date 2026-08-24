@@ -238,7 +238,9 @@ pip install tracer-llm[all]           # everything
 | [Troubleshooting](docs/troubleshooting.md) | `selected_method=null`, coverage drift, embedding-dim mismatch |
 | [AGENTS.md](AGENTS.md) | Integration guide for AI coding assistants |
 
-## Paper
+## Research
+
+### TRACER paper
 
 **TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification**  
 Adam Rida, arXiv 2026
@@ -253,6 +255,18 @@ Adam Rida, arXiv 2026
   year    = {2026}
 }
 ```
+
+### Pricing Capability
+
+**Pricing Capability: A Framework for Valuing Proprietary Data Assets in the Age of AI**
+
+Adam Rida, Tracer AI, Inc., August 23, 2026
+
+[PDF in this repository](research/pricing-capability.pdf) | [Research article](https://tracerml.ai/research/pricing-capability/) | [Canonical PDF](https://tracerml.ai/research/pricing-capability/pricing-capability-paper.pdf)
+
+This repository preserves the final 19-page public research paper as a timestamped artifact. It is an independent research paper and does not claim peer review or journal acceptance.
+
+SHA-256: `34a08d0b191ef5d0843feecf576a32a5341cbfde8830aee1a92d228f673c843e`
 
 ## License
 

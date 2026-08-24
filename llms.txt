@@ -30,7 +30,12 @@ Embedder.from_callable(fn)
 - docs/troubleshooting.md - common errors and fixes
 
 ## Paper
-Research paper in preparation -- covers formal guarantees, ablation studies, and reproducible experiments.
+Published paper: TRACER: Trace-Based Adaptive Cost-Efficient Routing for LLM Classification.
+https://arxiv.org/abs/2604.14531
+
+Pricing Capability research paper:
+https://github.com/adrida/tracer/blob/main/research/pricing-capability.pdf
+https://tracerml.ai/research/pricing-capability/
 
 ## Repo
 https://github.com/adrida/tracer
