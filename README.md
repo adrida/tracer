@@ -264,9 +264,9 @@ Adam Rida, Tracer AI, Inc., August 23, 2026
 
 [PDF in this repository](research/pricing-capability.pdf) | [Research article](https://tracerml.ai/research/pricing-capability/) | [Canonical PDF](https://tracerml.ai/research/pricing-capability/pricing-capability-paper.pdf)
 
-This repository preserves the final 19-page public research paper as a timestamped artifact. It is an independent research paper and does not claim peer review or journal acceptance.
+This repository preserves the current 26-page public research paper. The paper is dated August 23, 2026 and revised August 25, 2026. This revision adds recurring-license Price-Implied Uplift and a public transaction panel covering Reddit / Google, News Corp / OpenAI, New York Times / Amazon, and News Corp / Meta. The public PDF is a vector-preserving normalization of the August 25 export for reliable search, copying, and font embedding. It is independent research without a peer review or journal acceptance claim.
 
-SHA-256: `34a08d0b191ef5d0843feecf576a32a5341cbfde8830aee1a92d228f673c843e`
+SHA-256: `006e36fa3661da223fc3a8a59f15ea5cfc7330b093aa305914e6f2b5988226df`
 
 ## License
 

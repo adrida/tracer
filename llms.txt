@@ -36,6 +36,8 @@ https://arxiv.org/abs/2604.14531
 Pricing Capability research paper:
 https://github.com/adrida/tracer/blob/main/research/pricing-capability.pdf
 https://tracerml.ai/research/pricing-capability/
+Current public revision: 26 pages, dated August 23, 2026 and revised August 25, 2026.
+Adds recurring-license Price-Implied Uplift and a public transaction panel.
 
 ## Repo
 https://github.com/adrida/tracer
