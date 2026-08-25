@@ -260,13 +260,13 @@ Adam Rida, arXiv 2026
 
 **Pricing Capability: A Framework for Valuing Proprietary Data Assets in the Age of AI**
 
-Adam Rida, Tracer AI, Inc., August 23, 2026
+Adam Rida, Tracer AI, Inc., August 25, 2026
 
 [PDF in this repository](research/pricing-capability.pdf) | [Research article](https://tracerml.ai/research/pricing-capability/) | [Canonical PDF](https://tracerml.ai/research/pricing-capability/pricing-capability-paper.pdf)
 
-This repository preserves the current 26-page public research paper. The paper is dated August 23, 2026 and revised August 25, 2026. This revision adds recurring-license Price-Implied Uplift and a public transaction panel covering Reddit / Google, News Corp / OpenAI, New York Times / Amazon, and News Corp / Meta. The public PDF is a vector-preserving normalization of the August 25 export for reliable search, copying, and font embedding. It is independent research without a peer review or journal acceptance claim.
+This repository preserves the 21-page final submission dated August 25, 2026. The paper defines Capability Alpha under controlled evaluation, develops Price-Implied Uplift, studies Spirit Aviation's selected data-and-software bid, and compares four public AI data and content agreements. The public PDF preserves the submission's native text, bookmarks, citations, and internal navigation while adding descriptive document metadata. It is independent research without a peer review or journal acceptance claim.
 
-SHA-256: `006e36fa3661da223fc3a8a59f15ea5cfc7330b093aa305914e6f2b5988226df`
+SHA-256: `9fbead82d7f70b52dc0b5ce6416d587ddd1b370e93f219449fb606effba014ab`
 
 ## License
 
