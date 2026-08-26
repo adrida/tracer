@@ -48,6 +48,20 @@ def test_local_file_sink_writes_jsonl(tmp_path):
     assert json.loads(lines[0])["input_text"] == "a"
 
 
+@pytest.mark.parametrize(
+    "bad",
+    ["../evil", "..\\evil", "a/b", "a\\b", "..", "", "foo/../bar", "has space", "evil\x00x", "-leading"],
+)
+def test_local_file_sink_rejects_unsafe_names(tmp_path, bad):
+    with pytest.raises(ValueError, match="invalid watch name"):
+        LocalFileSink(bad, dir=str(tmp_path))
+
+
+def test_local_file_sink_allows_safe_names(tmp_path):
+    sink = LocalFileSink("support_classifier.v1", dir=str(tmp_path))
+    assert sink.path.endswith("support_classifier.v1.jsonl")
+
+
 # ----- Watcher decorator + context manager ----------------------------------- #
 def test_decorator_records_input_output(tmp_path):
     captured = []

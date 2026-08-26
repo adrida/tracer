@@ -174,7 +174,14 @@ def _cmd_sankey(args):
 
 def _cmd_serve(args):
     from tracer.runtime.serve import serve
-    serve(artifact_dir=args.artifact_dir, host=args.host, port=args.port)
+    serve(
+        artifact_dir=args.artifact_dir,
+        host=args.host,
+        port=args.port,
+        cors_origin=args.cors_origin,
+        max_body_bytes=args.max_body_bytes,
+        max_batch=args.max_batch,
+    )
 
 
 def _cmd_update(args):
@@ -691,12 +698,29 @@ def main():
     p_sankey.add_argument("--no-open", action="store_true",
                           help="Don't open browser automatically (html only)")
 
-    p_serve = sub.add_parser("serve",
-                              help="Start a prediction HTTP server")
+    p_serve = sub.add_parser(
+        "serve",
+        help="Start a prediction HTTP server (loopback by default, no auth)",
+    )
     p_serve.add_argument("artifact_dir", nargs="?", default=".tracer",
                          help="Artifact directory (default: .tracer)")
-    p_serve.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    p_serve.add_argument(
+        "--host", default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1; use 0.0.0.0 only behind a reverse proxy)",
+    )
     p_serve.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    p_serve.add_argument(
+        "--cors-origin", default=None,
+        help="If set, emit Access-Control-Allow-Origin (e.g. https://app.example.com or *). Off by default.",
+    )
+    p_serve.add_argument(
+        "--max-body-bytes", type=int, default=16 * 1024 * 1024,
+        help="Reject request bodies larger than this (default: 16MiB)",
+    )
+    p_serve.add_argument(
+        "--max-batch", type=int, default=10_000,
+        help="Reject /predict_batch with more rows than this (default: 10000)",
+    )
 
     p_update = sub.add_parser("update",
                                help="Refit with new traces (continual learning)")

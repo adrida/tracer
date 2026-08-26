@@ -71,6 +71,13 @@ describe("GenAISpan", () => {
 
 // ----- LocalFileSink --------------------------------------------------------- //
 describe("LocalFileSink", () => {
+  it("rejects unsafe watch names (allowlist)", () => {
+    const dir = tmpDir();
+    for (const bad of ["../evil", "..\\evil", "a/b", "..", "", "has space", "-leading"]) {
+      expect(() => new LocalFileSink(bad, dir)).toThrow(/invalid watch name/);
+    }
+  });
+
   it("writes JSONL", () => {
     const dir = tmpDir();
     const sink = new LocalFileSink("unit", dir);

@@ -19,7 +19,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import tracer
+from tracer.api import fit
+from tracer.config import FitConfig
 from tracer.runtime import serve as serve_mod
 from tracer.policy.artifacts import load_manifest
 from tracer.runtime.router import Router
@@ -51,8 +52,8 @@ def fitted_artifact(tmp_path_factory):
     tmpdir = tmp_path_factory.mktemp("serve_artifact")
     traces_path, X = _make_traces(tmpdir)
     artifact_dir = Path(tmpdir) / ".tracer"
-    result = tracer.fit(traces_path, artifact_dir, embeddings=X,
-                        config=tracer.FitConfig(verbose=False))
+    result = fit(traces_path, artifact_dir, embeddings=X,
+                 config=FitConfig(verbose=False))
     assert result.manifest.selected_method is not None, \
         "test fixture expected a deployable policy"
     return artifact_dir, X
@@ -65,6 +66,9 @@ def server(fitted_artifact):
     # can bind an ephemeral port and shut down cleanly.
     serve_mod._manifest = load_manifest(artifact_dir / "manifest.json")
     serve_mod._router = Router.load(artifact_dir)
+    serve_mod._cors_origin = None
+    serve_mod._max_body_bytes = 16 * 1024 * 1024
+    serve_mod._max_batch = 10_000
     httpd = HTTPServer(("127.0.0.1", 0), serve_mod._Handler)
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -160,3 +164,93 @@ def test_unknown_get_path_is_404(server):
 def test_unknown_post_path_is_404(server):
     status, body = _post(server, "/nope", {"x": 1})
     assert status == 404
+
+
+def test_default_serve_host_is_loopback():
+    import inspect
+    from tracer.runtime.serve import serve
+    assert inspect.signature(serve).parameters["host"].default == "127.0.0.1"
+
+
+def test_oversized_body_is_413(server):
+    serve_mod._max_body_bytes = 64
+    try:
+        payload = {"embedding": [0.1] * 100}
+        raw = json.dumps(payload).encode()
+        assert len(raw) > 64
+        req = Request(
+            f"{server}/predict",
+            data=raw,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(raw))},
+            method="POST",
+        )
+        try:
+            urlopen(req, timeout=5)
+            assert False, "expected 413"
+        except HTTPError as e:
+            assert e.code == 413
+            body = json.loads(e.read())
+            assert "too large" in body["error"]
+    finally:
+        serve_mod._max_body_bytes = 16 * 1024 * 1024
+
+
+def test_batch_over_max_is_413(server, fitted_artifact):
+    _, X = fitted_artifact
+    serve_mod._max_batch = 2
+    try:
+        status, body = _post(server, "/predict_batch", {"embeddings": X[:5].tolist()})
+        assert status == 413
+        assert "batch too large" in body["error"]
+    finally:
+        serve_mod._max_batch = 10_000
+
+
+def test_no_cors_header_by_default(server):
+    with urlopen(f"{server}/health", timeout=5) as resp:
+        assert resp.headers.get("Access-Control-Allow-Origin") is None
+
+
+def test_cors_origin_when_enabled(server):
+    serve_mod._cors_origin = "https://app.example.com"
+    try:
+        with urlopen(f"{server}/health", timeout=5) as resp:
+            assert resp.headers.get("Access-Control-Allow-Origin") == "https://app.example.com"
+    finally:
+        serve_mod._cors_origin = None
+
+
+def test_oversized_body_closes_connection(server):
+    serve_mod._max_body_bytes = 64
+    try:
+        raw = json.dumps({"embedding": [0.1] * 100}).encode()
+        req = Request(
+            f"{server}/predict",
+            data=raw,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(raw))},
+            method="POST",
+        )
+        try:
+            urlopen(req, timeout=5)
+            assert False, "expected 413"
+        except HTTPError as e:
+            assert e.code == 413
+            assert e.headers.get("Connection", "").lower() == "close"
+    finally:
+        serve_mod._max_body_bytes = 16 * 1024 * 1024
+
+
+def test_cli_serve_host_default_is_loopback(monkeypatch):
+    captured = {}
+
+    def fake_serve(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("tracer.runtime.serve.serve", fake_serve)
+    monkeypatch.setattr(sys, "argv", ["tracer", "serve", "/tmp/nonexistent-artifact"])
+    from tracer.cli.main import main
+    main()
+    assert captured["host"] == "127.0.0.1"
+    assert captured.get("cors_origin") is None
+    assert captured["max_body_bytes"] == 16 * 1024 * 1024
+    assert captured["max_batch"] == 10_000

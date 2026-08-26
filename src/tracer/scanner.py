@@ -697,7 +697,12 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 
     has_viz = bool(r.projection and r.projection.get("points"))
     viz_block = _VIZ_HTML if has_viz else ""
-    script = _VIZ_SCRIPT.replace("__VIZ_DATA__", _json.dumps(r.projection)) if has_viz else ""
+    # Embed JSON in <script>: escape "<" so teacher labels cannot close the tag.
+    if has_viz:
+        viz_json = _json.dumps(r.projection).replace("<", "\\u003c")
+        script = _VIZ_SCRIPT.replace("__VIZ_DATA__", viz_json)
+    else:
+        script = ""
     save_html = f"<p class='save'>{money}</p>" if money else ""
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -734,7 +739,8 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 
 
 def _esc(s: str) -> str:
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    from html import escape
+    return escape("" if s is None else str(s), quote=True)
 
 
 def _clean_examples(exs, n: int = 3, maxlen: int = 80) -> list:

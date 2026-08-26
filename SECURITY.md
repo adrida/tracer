@@ -45,4 +45,18 @@ own API keys; issues in third-party dependencies, model providers, or your own
 deployment configuration are out of scope here — please report those to the
 relevant vendor.
 
+## Trust model (operators)
+
+A few boundaries that matter when deploying Tracer:
+
+- **`.tracer` artifacts are trusted code.** `pipeline.joblib` is loaded with
+  joblib/pickle. Only load artifacts you produced (or otherwise fully trust).
+  Treat a foreign `.tracer/` directory like an untrusted binary.
+- **`tracer serve` has no authentication.** It binds to `127.0.0.1` by default.
+  If you bind to `0.0.0.0` (or otherwise expose the port), put a reverse proxy
+  with TLS and auth in front. CORS is off unless you pass `--cors-origin`.
+- **`tracer.watch` / `@tracer-llm/watch` may exfiltrate prompts.** When
+  `TRACER_CLOUD_KEY` (or an OTLP endpoint) is set, full input/output text is
+  sent to that destination. Keep those env vars under your control.
+
 Thank you for helping keep Tracer and its users safe.

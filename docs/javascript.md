@@ -81,7 +81,7 @@ TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` e
 tracer serve .tracer --port 8000
 ```
 
-Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. It binds to `0.0.0.0:8000` by default.
+Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. It binds to `127.0.0.1:8000` by default (pass `--host 0.0.0.0` only behind a reverse proxy with auth).
 
 ---
 

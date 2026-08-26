@@ -35,3 +35,15 @@ notebooks/data/
 
 # Node (JS package)
 node_modules/
+
+# Secrets / credentials (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+cloud.json
+
+# Local agent/security tooling
+.superstack/

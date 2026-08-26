@@ -339,7 +339,10 @@ tracer serve [<artifact-dir>] [--host <addr>] [--port <int>]
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `artifact-dir` | `.tracer` | Artifact directory |
-| `--host` | `0.0.0.0` | Bind address |
+| `--host` | `127.0.0.1` | Bind address (loopback; use `0.0.0.0` only behind a reverse proxy with auth) |
+| `--cors-origin` | off | If set, emit `Access-Control-Allow-Origin` (e.g. `https://app.example.com` or `*`) |
+| `--max-body-bytes` | `16777216` | Reject larger request bodies |
+| `--max-batch` | `10000` | Reject `/predict_batch` with more rows |
 | `--port` | `8000` | Listen port |
 
 **Endpoints:**

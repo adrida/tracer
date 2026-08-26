@@ -155,8 +155,9 @@ router = tracer.load_router(".tracer", embedder=my_embedder)
 
 ### Pattern 4: HTTP server (zero deps)
 ```bash
-tracer serve .tracer --port 8000
+tracer serve .tracer --port 8000          # binds 127.0.0.1 by default (no auth)
 # POST /predict {"embedding": [...]} → {"label", "decision", "accept_score"}
+# Only use --host 0.0.0.0 behind a reverse proxy with TLS/auth. .tracer artifacts are trusted code (joblib/pickle).
 ```
 
 ---
