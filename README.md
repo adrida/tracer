@@ -264,9 +264,9 @@ Adam Rida, Tracer AI, Inc., August 25, 2026
 
 [PDF in this repository](research/pricing-capability.pdf) | [Research article](https://tracerml.ai/research/pricing-capability/) | [Canonical PDF](https://tracerml.ai/research/pricing-capability/pricing-capability-paper.pdf)
 
-This repository preserves the 21-page final submission dated August 25, 2026. The paper defines Capability Alpha under controlled evaluation, develops Price-Implied Uplift, studies Spirit Aviation's selected data-and-software bid, and compares four public AI data and content agreements. The public PDF preserves the submission's native text, bookmarks, citations, and internal navigation while adding descriptive document metadata. It is independent research without a peer review or journal acceptance claim.
+This repository preserves the 21-page final submission dated August 25, 2026. The paper defines Capability Alpha under controlled evaluation, develops Price-Implied Uplift, studies Spirit Aviation's selected data-and-software bid, and compares four public AI data and content agreements. The public PDF preserves the final submission's text, bookmarks, citations, and internal navigation, corrects one internal section reference, and adds descriptive document metadata. It is independent research without a peer review or journal acceptance claim.
 
-SHA-256: `9fbead82d7f70b52dc0b5ce6416d587ddd1b370e93f219449fb606effba014ab`
+SHA-256: `72f2dfa8385c4ea4c74297dc2d1a9f1a193fd447f5452138dfef2dda8778c65c`
 
 ## License
 
