@@ -8,6 +8,7 @@ import numpy as np
 
 from tracer.fit.pipeline import (
     build_global, _split_buffer, _accept_features, _fit_acceptor, _cp_lower,
+    _calibrate_threshold,
 )
 
 
@@ -39,6 +40,52 @@ def test_large_separable_certifies_with_lower_bound():
     assert g["summary"]["status"] == "ok"
     # the reported certification is the honest lower bound, and it clears target
     assert g["summary"]["teacher_agreement_lower_cal_total"] >= 0.9
+
+
+def _max_qualifying_coverage(scores, preds, y, target, alpha, min_accept):
+    """Highest coverage among thresholds whose CP lower bound clears target."""
+    for t in np.unique(np.sort(scores)):
+        acc = scores >= t
+        n_acc = int(acc.sum())
+        if n_acc < min_accept:
+            continue
+        k_acc = int((preds[acc] == y[acc]).sum())
+        if _cp_lower(k_acc, n_acc, alpha) >= target:
+            return float(acc.mean())
+    return None
+
+
+def test_single_set_gate_deploys_max_coverage_threshold():
+    # n < 40 -> single-set fallback branch. Among the thresholds that clear the
+    # same CP bound, the gate must deploy the highest-coverage one, as the
+    # holdout branch does. It previously kept the last (lowest-coverage) one.
+    n = 36
+    scores = np.linspace(0.50, 0.99, n)
+    y = np.zeros(n, dtype=int)
+    preds = y.copy()
+    preds[:6] = 1  # the 6 lowest-scoring rows disagree with the teacher
+
+    out = _calibrate_threshold(scores, preds, y, 0.80, alpha=0.1, min_accept=10)
+    assert out is not None and out["holdout"] is False
+
+    best = _max_qualifying_coverage(scores, preds, y, 0.80, 0.1, 10)
+    assert best is not None
+    assert out["coverage"] == best
+    # the guarantee still holds at the deployed threshold
+    assert out["teacher_agreement_lower"] >= 0.80
+
+
+def test_single_set_gate_coverage_does_not_shrink_with_more_data():
+    # On cleanly-separated calibration data the accepted set must grow with n,
+    # not stay pinned at min_accept.
+    covs = []
+    for n in (20, 30, 39):
+        scores = np.linspace(0.50, 0.99, n)
+        y = np.zeros(n, dtype=int)
+        out = _calibrate_threshold(scores, y.copy(), y, 0.80, alpha=0.1, min_accept=10)
+        assert out is not None
+        covs.append(out["coverage"])
+    assert all(c == 1.0 for c in covs), covs
 
 
 def test_nan_probs_do_not_crash_acceptor():
