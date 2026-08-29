@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from tracer.fit.ood import fit_ood_gate, ood_mask
+from tracer.fit.ood import fit_ood_gate, ood_mask, build_ood_index
 
 
 def _train(n=500, dim=16, seed=0):
@@ -52,3 +52,25 @@ def test_ood_mask_no_gate_is_noop():
     X = np.zeros((3, 4), dtype=np.float32)
     out = ood_mask(X, X, ["a", "a", "a"], None)
     assert out.shape == (3,) and not out.any()
+
+
+def test_prebuilt_index_matches_fresh_index():
+    """build_ood_index() + ood_mask(..., index=...) (the path Router now uses,
+    built once at load time) must give identical results to the fresh-fit
+    path, since it's the same computation with the fit step hoisted out."""
+    X, labels = _train()
+    gate = fit_ood_gate(X, labels)
+    rng = np.random.RandomState(3)
+    X_q = rng.normal(0, 1, (25, 16)).astype(np.float32)
+    q = ["a"] * 25
+
+    fresh = ood_mask(X_q, X, q, gate)
+    idx = build_ood_index(X, gate)
+    cached = ood_mask(X_q, X, q, gate, index=idx)
+    assert (fresh == cached).all()
+
+
+def test_build_ood_index_none_cases():
+    assert build_ood_index(None, {"k": 5}) is None
+    assert build_ood_index(np.zeros((0, 4)), {"k": 5}) is None
+    assert build_ood_index(np.zeros((5, 4)), None) is None

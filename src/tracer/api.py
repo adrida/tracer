@@ -153,12 +153,22 @@ def fit(
         # Distance-based OOD gate: calibrate kNN-distance thresholds (global +
         # per predicted label) so the runtime can defer off-distribution inputs
         # the parity gate never saw. Safety net, not the partition.
+        #
+        # The gate's training embeddings are saved to their own dedicated
+        # array (ood_train_embeddings.npy) rather than reusing the FAISS
+        # index's embeddings.npy: the index build below normalizes its own
+        # copy for cosine similarity, which is a different representation
+        # than whatever fit_ood_gate calibrated its distance thresholds on.
+        # Keeping them as two independent artifacts means the two can never
+        # silently drift out of scale with each other, regardless of what
+        # normalization the FAISS index does or whether faiss is installed.
         try:
             from tracer.fit.ood import fit_ood_gate
             pred_label_strs = [idx_to_label.get(int(p), "?") for p in preds]
             ood_gate = fit_ood_gate(X, pred_label_strs)
             if ood_gate is not None:
                 (artifact_dir / "ood.json").write_text(json.dumps(ood_gate))
+                np.save(artifact_dir / "ood_train_embeddings.npy", X)
                 notes.append(
                     f"OOD gate calibrated (kNN dist, global thr={ood_gate['global_thr']:.3f}, "
                     f"{len(ood_gate['per_label_thr'])} per-label)")

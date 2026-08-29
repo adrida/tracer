@@ -35,7 +35,7 @@ class Router:
     """
 
     def __init__(self, stages: list, label_space: list, manifest, embedder=None,
-                 ood_gate=None, train_embeddings=None):
+                 ood_gate=None, train_embeddings=None, ood_index=None):
         self._stages = stages
         self._label_space = label_space
         self._idx_to_label = {i: l for i, l in enumerate(label_space)}
@@ -43,6 +43,9 @@ class Router:
         self.embedder = embedder
         self._ood_gate = ood_gate
         self._train_embeddings = train_embeddings
+        # Pre-fit k-NN index over the training embeddings (see fit.ood.build_ood_index):
+        # built once here rather than re-fit from scratch on every predict() call.
+        self._ood_index = ood_index
 
     @classmethod
     def load(cls, artifact_dir: Union[str, Path], embedder=None) -> "Router":
@@ -67,18 +70,32 @@ class Router:
         label_space = bundle["label_space"]
 
         # Optional OOD safety net: defer inputs far from the training distribution.
+        # train_emb comes from its own dedicated array (ood_train_embeddings.npy),
+        # not the FAISS index's embeddings.npy -- the index build normalizes its
+        # own copy for cosine similarity, a different representation than what
+        # fit_ood_gate calibrated its distance thresholds on. Falls back to the
+        # index's embeddings for artifacts written before this file existed.
         ood_gate = None
         train_emb = None
+        ood_index = None
         ood_path = artifact_dir / "ood.json"
         if ood_path.exists():
             try:
+                import numpy as _np
                 ood_gate = _json.loads(ood_path.read_text())
-                from tracer.embeddings.index import EmbeddingIndex
-                train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
+                ood_emb_path = artifact_dir / "ood_train_embeddings.npy"
+                if ood_emb_path.exists():
+                    train_emb = _np.load(ood_emb_path)
+                else:
+                    from tracer.embeddings.index import EmbeddingIndex
+                    train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
+                from tracer.fit.ood import build_ood_index
+                ood_index = build_ood_index(train_emb, ood_gate)
             except Exception:
-                ood_gate, train_emb = None, None
+                ood_gate, train_emb, ood_index = None, None, None
         return cls(stages=stages, label_space=label_space, manifest=manifest,
-                   embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb)
+                   embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb,
+                   ood_index=ood_index)
 
     def _ood_flags(self, X: np.ndarray, preds) -> np.ndarray:
         """True where each row is out-of-distribution (force-deferred)."""
@@ -86,7 +103,8 @@ class Router:
             return np.zeros(len(X), dtype=bool)
         from tracer.fit.ood import ood_mask
         labels = [self._idx_to_label.get(int(p), "?") for p in preds]
-        return ood_mask(X, self._train_embeddings, labels, self._ood_gate)
+        return ood_mask(X, self._train_embeddings, labels, self._ood_gate,
+                        index=self._ood_index)
 
     def _to_embedding(self, input) -> np.ndarray:
         """Convert input (text or array) to a (dim,) float32 embedding."""

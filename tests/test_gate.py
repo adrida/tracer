@@ -51,9 +51,9 @@ def test_nan_probs_do_not_crash_acceptor():
 
 def test_routing_robust_to_extreme_ood_inputs():
     """Out-of-distribution / extreme embeddings must route without crashing and
-    produce finite accept scores. (The OSS library defers via the acceptor
-    threshold; it does not ship a separate distance-based OOD gate, which lives
-    in the hosted gateway.)"""
+    produce finite accept scores, even with no OOD gate calibrated (this test
+    exercises apply_stage/the acceptor threshold directly, not the separate
+    distance-based OOD gate in fit/ood.py -- see tests/test_ood.py for that)."""
     from tracer.fit.pipeline import build_l2d, apply_stage
     split = _make_split(800, 3.0)
     res = build_l2d(split, target_ta=0.9, alpha=0.1)
