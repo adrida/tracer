@@ -15,6 +15,16 @@ label (global fallback for sparse labels). This is standard kNN-distance OOD
 detection. It is intentionally NOT keyed on the partition cells, the cell
 construction is out of scope here; this gate only needs the input embeddings and
 the surrogate's predicted label.
+
+The caller is responsible for passing fit_ood_gate() and ood_mask() embeddings
+on the same scale (whatever that is -- raw, L2-normalized, or otherwise). This
+module does not rescale its input: doing so would silently change what "far"
+means (angular vs. magnitude-sensitive distance), which is a real behavioural
+choice, not something to bake in unconditionally. See api.py/router.py: the
+training embeddings used to calibrate this gate are saved and reloaded as their
+own dedicated artifact, kept independent of whatever the (possibly
+cosine-normalizing) FAISS index build does to its own copy, specifically so the
+two can never silently drift out of scale with each other.
 """
 
 from __future__ import annotations
@@ -52,20 +62,42 @@ def fit_ood_gate(X_train: np.ndarray, pred_labels, k: int = 10,
             "global_thr": global_thr, "per_label_thr": per_label}
 
 
-def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate) -> np.ndarray:
-    """Boolean array, True where a query is out-of-distribution (should defer).
+def build_ood_index(X_train: np.ndarray, gate: Optional[dict]):
+    """Fit a reusable k-NN index over the training embeddings.
 
-    Uses the same mean-k-NN-distance rule the gate was calibrated with, comparing
-    against the per-predicted-label threshold (global fallback)."""
-    X_query = np.asarray(X_query, dtype=np.float32)
-    if gate is None or X_train is None or len(X_train) == 0 or len(X_query) == 0:
-        return np.zeros(len(X_query), dtype=bool)
+    A caller that invokes ``ood_mask`` repeatedly against the same X_train --
+    e.g. a live Router calling it once per prediction -- should build this
+    once (at load time) and pass it back in via ``ood_mask(..., index=...)``,
+    instead of paying the index-fit cost fresh on every single call.
+    """
+    if gate is None or X_train is None or len(X_train) == 0:
+        return None
     from sklearn.neighbors import NearestNeighbors
     k = int(min(gate.get("k", 10), len(X_train)))
     if k < 1:
+        return None
+    return NearestNeighbors(n_neighbors=k).fit(np.asarray(X_train, dtype=np.float32))
+
+
+def ood_mask(X_query: np.ndarray, X_train: np.ndarray, query_labels, gate,
+             index=None) -> np.ndarray:
+    """Boolean array, True where a query is out-of-distribution (should defer).
+
+    Uses the same mean-k-NN-distance rule the gate was calibrated with, comparing
+    against the per-predicted-label threshold (global fallback).
+
+    ``index``: an optional pre-fit index from ``build_ood_index()``. If omitted,
+    one is built fresh from X_train on every call (fine for one-off/batch use,
+    wasteful for a live router serving one prediction at a time).
+    """
+    X_query = np.asarray(X_query, dtype=np.float32)
+    if gate is None or len(X_query) == 0 or (index is None and (X_train is None or len(X_train) == 0)):
         return np.zeros(len(X_query), dtype=bool)
-    nn = NearestNeighbors(n_neighbors=k).fit(np.asarray(X_train, dtype=np.float32))
-    d, _ = nn.kneighbors(X_query)
+    if index is None:
+        index = build_ood_index(X_train, gate)
+        if index is None:
+            return np.zeros(len(X_query), dtype=bool)
+    d, _ = index.kneighbors(X_query)
     mean_d = d.mean(axis=1)
     per = gate.get("per_label_thr", {})
     g = float(gate.get("global_thr", np.inf))

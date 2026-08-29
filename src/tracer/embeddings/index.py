@@ -22,14 +22,20 @@ class EmbeddingIndex:
         except ImportError:
             return cls(embeddings, index=None)
 
-        X = embeddings.astype(np.float32, copy=False)
+        # Always copy: normalize_L2 mutates in place, and callers (e.g.
+        # api.py, which passes the same array it just used to calibrate the
+        # OOD gate and train the surrogate) must not have their embeddings
+        # silently rescaled out from under them as a side effect of building
+        # this index. Store the exact array that was indexed on `.embeddings`
+        # so the two stay consistent with each other.
+        X = np.array(embeddings, dtype=np.float32, copy=True)
         if metric == "cosine":
             faiss.normalize_L2(X)
             idx = faiss.IndexFlatIP(X.shape[1])
         else:
             idx = faiss.IndexFlatL2(X.shape[1])
         idx.add(X)
-        return cls(embeddings, index=idx)
+        return cls(X, index=idx)
 
     def search(self, query: np.ndarray, k: int = 5):
         if self._index is None:

@@ -183,3 +183,59 @@ def test_fallback_called_on_deferred(fitted):
             break
     if not deferred_found:
         pytest.skip("no deferred prediction found, policy handled everything")
+
+
+# ── OOD gate: decoupled from the FAISS index (regression) ──────────────────────
+
+def test_ood_train_embeddings_saved_as_dedicated_artifact(fitted):
+    """fit() must save the OOD gate's calibration embeddings to their own file,
+    exactly matching the array it calibrated on -- not reuse the FAISS index's
+    embeddings.npy, which build() may have separately normalized for cosine
+    similarity. See fit/ood.py's module docstring for why the two must stay
+    decoupled."""
+    artifact_dir, X = fitted
+    ood_emb_path = artifact_dir / "ood_train_embeddings.npy"
+    if not ood_emb_path.exists():
+        pytest.skip("no OOD gate calibrated for this fixture")
+    saved = np.load(ood_emb_path)
+    np.testing.assert_array_equal(saved, X)
+
+
+def test_ood_gate_correct_after_fit_and_load_with_faiss():
+    """Regression test for a real bug: with faiss installed, EmbeddingIndex.build
+    L2-normalizes its own copy of the embeddings for the cosine index. Router
+    used to load the OOD gate's train_embeddings from that same (normalized)
+    array, while fit_ood_gate had calibrated its thresholds on the original raw
+    embeddings -- a scale mismatch between calibration and inference. A full
+    fit() -> load_router() round trip must still correctly flag clearly
+    off-distribution inputs and pass through in-distribution ones."""
+    pytest.importorskip("faiss")
+    import tempfile
+    import tracer
+
+    with tempfile.TemporaryDirectory() as tmp:
+        traces_path, X = _make_traces(tmp)  # defaults match the `fitted` fixture above (known-deployable)
+        artifact_dir = Path(tmp) / ".tracer"
+        result = tracer.fit(traces_path, artifact_dir, embeddings=X,
+                            config=tracer.FitConfig(verbose=False))
+        if result.manifest.selected_method is None:
+            pytest.skip("no deployable policy on this synthetic split")
+
+        router = tracer.load_router(artifact_dir)
+        if router._ood_gate is None:
+            pytest.skip("no OOD gate calibrated for this fixture")
+
+        # Check the OOD gate's own flag directly (isolated from the acceptor's
+        # separate handled/deferred decision, which router.predict() conflates
+        # it with): a clearly off-distribution point must be flagged, and the
+        # original training points -- the exact rows the gate calibrated on --
+        # must not be, since a scale mismatch would corrupt both directions.
+        from tracer.fit.pipeline import _predict as _stage_predict
+        rng = np.random.RandomState(7)
+        dim = X.shape[1]
+        far = (rng.randn(1, dim) * 1000).astype(np.float32)
+        far_preds, _ = _stage_predict(router._stages[0]["clf"], far)
+        assert router._ood_flags(far, far_preds)[0]
+
+        train_preds, _ = _stage_predict(router._stages[0]["clf"], X)
+        assert not router._ood_flags(X, train_preds).any()
