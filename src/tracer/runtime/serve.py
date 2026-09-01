@@ -13,7 +13,7 @@ Zero external dependencies - uses http.server from stdlib.
 from __future__ import annotations
 
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Union
 
@@ -129,7 +129,10 @@ def serve(
     _manifest = load_manifest(artifact_dir / "manifest.json")
     _router = Router.load(artifact_dir)
 
-    server = HTTPServer((host, port), _Handler)
+    # ThreadingHTTPServer handles requests concurrently (one thread per request)
+    # so a slow or queued request can't block others. Prediction is read-only on
+    # the loaded model, so the shared router is safe to use across threads.
+    server = ThreadingHTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
     cov = f"{_manifest.coverage_cal:.1%}" if _manifest.coverage_cal else "n/a"
     print(f"\n  TRACER serve")

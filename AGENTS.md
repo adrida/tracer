@@ -189,7 +189,9 @@ tracer serve .tracer --port 8000
 | `tracer.fit(traces, embeddings=X)` | Fit routing policy | No (if data ready) |
 | `tracer.load_router(dir, embedder=e)` | Load for inference | No |
 | `router.predict(text_or_emb)` | Route one input | No |
-| `router.predict_batch(inputs)` | Route a batch | No |
+| `router.predict_batch(inputs, fallback=...)` | Route a batch, fill deferred via fallback | No |
+| `await router.apredict(x)` / `apredict_batch(xs)` | Async route (high-throughput) | No |
+| `AsyncBatcher(router)` | Coalesce concurrent calls into shared passes | No |
 | `tracer.update(new_traces, embeddings=X)` | Refit with new data | No |
 | `tracer.embed(texts)` | Compute embeddings | Needs `pip install tracer-llm[embeddings]` |
 | `Embedder.from_endpoint(url)` | External embedding API | Needs URL + auth from human |
