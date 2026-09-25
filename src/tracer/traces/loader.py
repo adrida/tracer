@@ -49,7 +49,7 @@ def load_traces(path: Union[str, Path]) -> TraceDataset:
             teacher_val = row[label_key]
             if teacher_val is None or (isinstance(teacher_val, float) and math.isnan(teacher_val)):
                 raise ValueError(
-                    f"Trace at line {len(records) + 1} has a null/NaN 'teacher' field. "
+                    f"Trace at line {lineno} has a null/NaN 'teacher' field. "
                     f"This usually happens when json.dumps() serializes float('nan') as "
                     f"unquoted NaN. Filter out rows with missing labels before fitting."
                 )
