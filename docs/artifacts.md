@@ -48,7 +48,7 @@ The top-level summary. Human-readable and machine-readable.
 | `selected_method` | Which pipeline was deployed: `"global"`, `"l2d"`, `"rsb"`, or `null` (parity gate blocked) |
 | `coverage_cal` | Fraction of calibration-set traffic handled by surrogate. Proxy for production coverage. |
 | `teacher_agreement_cal` | On calibration-set handled traffic, fraction where surrogate agreed with teacher. Should be ≥ `target_teacher_agreement`. |
-| `n_retrains` | How many times this artifact has been updated via `tracer.update()` |
+| `n_retrains` | Number of fits in this artifact's history: 1 after initial fitting, incremented by each successful `tracer.update()` |
 
 **Null method:** If `selected_method` is `null`, coverage is 0%. All traffic routes to the teacher. This happens when no pipeline could reach the target teacher agreement on the calibration set. It's safe -- not an error.
 

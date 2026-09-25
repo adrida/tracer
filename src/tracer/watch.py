@@ -22,8 +22,11 @@ network export requires an explicitly configured endpoint or custom sink.
 from __future__ import annotations
 
 import contextvars
+import inspect
 import json
 import os
+import re
+import sys
 import threading
 import time
 import uuid
@@ -196,19 +199,35 @@ class Sink(Protocol):
     def close(self) -> None: ...
 
 
+def _debug_failure(exc: Exception) -> None:
+    if os.environ.get("TRACER_WATCH_DEBUG"):
+        try:
+            print(f"[tracer.watch] recording failed: {exc}", file=sys.stderr)
+        except Exception:
+            pass
+
+
 class LocalFileSink:
     """Append spans as JSONL to ``<dir>/<name>.jsonl``. No network, no key."""
 
     def __init__(self, name: str, dir: str = ".tracer/watch") -> None:
+        if not isinstance(name, str) or len(name) > 128 or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is None:
+            raise ValueError("Watcher names must start with a letter or digit and contain only letters, digits, '.', '_' or '-' (max 128 characters)")
         self.path = os.path.join(dir, f"{name}.jsonl")
-        os.makedirs(dir, exist_ok=True)
+        try:
+            os.makedirs(dir, exist_ok=True)
+        except OSError as exc:
+            _debug_failure(exc)
         self._lock = threading.Lock()
 
     def emit(self, span: GenAISpan) -> None:
-        line = json.dumps(span.to_dict(), ensure_ascii=False)
-        with self._lock:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+        try:
+            line = json.dumps(span.to_dict(), ensure_ascii=False)
+            with self._lock:
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception as exc:
+            _debug_failure(exc)
 
     def close(self) -> None:  # nothing buffered
         return None
@@ -259,11 +278,17 @@ class MultiSink:
 
     def emit(self, span: GenAISpan) -> None:
         for s in self.sinks:
-            s.emit(span)
+            try:
+                s.emit(span)
+            except Exception as exc:
+                _debug_failure(exc)
 
     def close(self) -> None:
         for s in self.sinks:
-            s.close()
+            try:
+                s.close()
+            except Exception as exc:
+                _debug_failure(exc)
 
 
 # Tracks the currently-open span so nested watched calls form a trace tree
@@ -445,26 +470,50 @@ class Watcher:
     def __call__(self, fn: Callable) -> Callable:
         import functools
 
+        if inspect.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                span = self._begin(self._input(args, kwargs))
+                try:
+                    result = await fn(*args, **kwargs)
+                    self._capture(span, result)
+                    return result
+                except BaseException as exc:
+                    span.status, span.error = "error", str(exc)
+                    raise
+                finally:
+                    self._finish(span)
+            return async_wrapper
+
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            span = self._begin(self.extract_input(args, kwargs))
+            span = self._begin(self._input(args, kwargs))
             try:
                 result = fn(*args, **kwargs)
-            except Exception as e:
-                span.status = "error"
-                span.error = str(e)
-                self._finish(span)
+                self._capture(span, result)
+                return result
+            except BaseException as exc:
+                span.status, span.error = "error", str(exc)
                 raise
-            # Auto-capture model / tokens / finish_reason / tool calls if the
-            # function returned a provider response object; otherwise fall back
-            # to the plain output extractor.
+            finally:
+                self._finish(span)
+
+        return wrapper
+
+    def _input(self, args, kwargs) -> str:
+        try:
+            return self.extract_input(args, kwargs)
+        except Exception as exc:
+            _debug_failure(exc)
+            return ""
+
+    def _capture(self, span, result) -> None:
+        try:
             extract_response(span, result)
             if not span.output_text:
                 span.output_text = self.extract_output(result)
-            self._finish(span)
-            return result
-
-        return wrapper
+        except Exception as exc:
+            _debug_failure(exc)
 
     # -- context manager -------------------------------------------------- #
     def span(
@@ -520,10 +569,16 @@ class Watcher:
                 _ACTIVE.reset(tok)
             except (ValueError, LookupError):
                 pass
-        self.sink.emit(span)
+        try:
+            self.sink.emit(span)
+        except Exception as exc:
+            _debug_failure(exc)
 
     def close(self) -> None:
-        self.sink.close()
+        try:
+            self.sink.close()
+        except Exception as exc:
+            _debug_failure(exc)
 
 
 class _SpanCtx:

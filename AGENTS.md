@@ -32,7 +32,7 @@ out = router.predict(embedding_vector)              # numpy array
 out = router.predict("raw text", embedder=embedder) # or text directly
 
 # 3. UPDATE - continual learning (coverage grows over time)
-tracer.update("new_traces.jsonl", embeddings=X_new)
+tracer.update("new_traces.jsonl", new_embeddings=X_new)
 
 # 4. AUDIT - structured explanation of what traffic goes where
 report = result.qualitative_report  # slices, boundary pairs, examples
@@ -148,7 +148,7 @@ out = router.predict(text, fallback=lambda: call_gpt4(text))
 ### Pattern 3: Continual learning loop
 ```python
 # Collect new traces from production
-tracer.update("new_traces.jsonl", embeddings=X_new)
+tracer.update("new_traces.jsonl", new_embeddings=X_new)
 # Reload router with improved policy
 router = tracer.load_router(".tracer", embedder=my_embedder)
 ```
@@ -190,7 +190,7 @@ tracer.serve(".tracer", port=8000)
 | `tracer.load_router(dir, embedder=e)` | Load for inference | No |
 | `router.predict(text_or_emb)` | Route one input | No |
 | `router.predict_batch(inputs)` | Route a batch | No |
-| `tracer.update(new_traces, embeddings=X)` | Refit with new data | No |
+| `tracer.update(new_traces, new_embeddings=X)` | Refit with new data | No |
 | `tracer.embed(texts)` | Compute embeddings | Needs `pip install tracer-llm[embeddings]` |
 | `Embedder.from_endpoint(url)` | External embedding API | Needs URL + auth from human |
 | `tracer.generate_html_report(dir)` | Visual audit | No |

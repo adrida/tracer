@@ -94,6 +94,11 @@ tracer.serve(".tracer", host="127.0.0.1", port=8000)
 
 Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. This example binds to `127.0.0.1:8000`. For a container sidecar, bind to `0.0.0.0` inside the container and limit network access to your application.
 
+The server defaults to loopback, accepts JSON bodies up to 8 MiB, and uses a
+10-second socket timeout. It handles requests concurrently. Invalid input returns
+HTTP 400. It provides no authentication or CORS headers; for browser or remote
+access, configure authentication, TLS, and CORS at your reverse proxy.
+
 ---
 
 ## Predicting from your JS app
@@ -168,7 +173,7 @@ Every deferred input that reaches your LLM is a new trace. Accumulate them and r
 # Run this script on a schedule; supply matching embeddings or a sibling .npy.
 import tracer
 
-tracer.update("new_traces.jsonl", embeddings=X_new)
+tracer.update("new_traces.jsonl", new_embeddings=X_new)
 ```
 
 Then restart the `serve_policy.py` process to pick up the updated policy. Coverage typically grows from ~84% at day 1 to 90%+ within a week of production traffic.

@@ -17,6 +17,8 @@ jobs:
         include:
           - python-version: "3.12"
             dependencies: minimum
+          - python-version: "3.12"
+            dependencies: faiss
 
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +33,8 @@ jobs:
           python -m pip install --upgrade pip
           if [ "${{ matrix.dependencies }}" = "minimum" ]; then
             python -m pip install -e ".[dev]" "numpy==1.26.4" "scikit-learn==1.4.2" "joblib==1.3.2"
+          elif [ "${{ matrix.dependencies }}" = "faiss" ]; then
+            python -m pip install -e ".[dev,faiss]" plotly
           else
             python -m pip install -e ".[dev]"
           fi

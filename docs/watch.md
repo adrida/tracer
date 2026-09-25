@@ -7,6 +7,12 @@ OpenTelemetry GenAI schema), and the same object that feeds
 
 ## Quick start
 
+Decorators support both regular functions and `async def`; async spans finish
+after the awaited call returns or raises. Recording failures do not replace the
+application's result or exception. Set `TRACER_WATCH_DEBUG=1` to diagnose them.
+Local watcher names must start with an ASCII letter or digit and contain only
+letters, digits, dots, underscores, or hyphens (maximum 128 characters).
+
 ```python
 import tracer
 

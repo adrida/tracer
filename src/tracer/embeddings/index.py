@@ -22,7 +22,9 @@ class EmbeddingIndex:
         except ImportError:
             return cls(embeddings, index=None)
 
-        X = embeddings.astype(np.float32, copy=False)
+        # FAISS normalizes in place. Keep the caller and persisted training data
+        # at their original scale for refitting and the Euclidean OOD gate.
+        X = np.array(embeddings, dtype=np.float32, order="C", copy=True)
         if metric == "cosine":
             faiss.normalize_L2(X)
             idx = faiss.IndexFlatIP(X.shape[1])

@@ -99,7 +99,7 @@ As your LLM handles more production traffic, append new traces and re-fit:
 
 ```python
 # After collecting more traces
-result = tracer.update("new_traces.jsonl", ".tracer", embeddings=X_new)
+result = tracer.update("new_traces.jsonl", ".tracer", new_embeddings=X_new)
 ```
 
 Each update round adds deferred inputs (the ones the surrogate wasn't confident about) back into the training pool, automatically expanding coverage over time. This is TRACER's core feedback loop.

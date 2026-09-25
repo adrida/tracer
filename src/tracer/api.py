@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import tempfile
 import time
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -73,10 +76,7 @@ def fit(
             raise FileNotFoundError(
                 f"No embeddings found. Pass embeddings= or place a .npy file at {emb_path}")
 
-    if len(embeddings) != len(dataset):
-        raise ValueError(f"Trace/embedding mismatch: {len(dataset)} traces vs {len(embeddings)} embeddings")
-
-    X = embeddings.astype(np.float32, copy=False)
+    X = _embedding_matrix(embeddings, len(dataset))
     y_teacher = np.array([label_to_idx[r.teacher_label] for r in dataset.records], dtype=int)
     y_true = None
     has_gt = all(r.ground_truth is not None for r in dataset.records)
@@ -102,7 +102,7 @@ def fit(
     frontier, split = fit_frontier(X, y_teacher, targets,
                                    max_fit_labels=config.max_fit_labels,
                                    min_coverage=config.min_deploy_coverage,
-                                   log=log_fn, skip=config.skip_candidates)
+                                   log=log_fn, skip=config.skip_candidates, seed=config.seed)
 
     # Select best pipeline at target TA
     selected = None
@@ -137,11 +137,13 @@ def fit(
         decisions = ["handled" if h else "deferred" for h in handled]
 
         scores = np.zeros(len(X))
-        for i, stage in enumerate(best["stages"]):
-            mask = stage_id == i
-            if mask.any():
-                _, _, s = apply_stage(stage, X[mask])
-                scores[mask] = s
+        remaining = np.ones(len(X), dtype=bool)
+        for stage in best["stages"]:
+            if remaining.any():
+                _, accepted, stage_scores = apply_stage(stage, X[remaining])
+                rows = np.flatnonzero(remaining)
+                scores[rows] = stage_scores
+                remaining[rows[accepted]] = False
 
         qual_report = build_qualitative_report(
             texts=texts, teacher_labels=teacher_labels_str,
@@ -179,13 +181,7 @@ def fit(
 
     # Save config
     config_path = artifact_dir / "config.json"
-    config_path.write_text(json.dumps({
-        "target_teacher_agreement": config.target_teacher_agreement,
-        "frontier_targets": list(config.frontier_targets),
-        "min_deploy_coverage": config.min_deploy_coverage,
-        "max_fit_labels": config.max_fit_labels,
-        "seed": config.seed,
-    }, indent=2), encoding="utf-8")
+    config_path.write_text(json.dumps(asdict(config), indent=2), encoding="utf-8")
 
     # Save frontier summary
     frontier_path = artifact_dir / "frontier.json"
@@ -216,6 +212,19 @@ def fit(
         qualitative_report=qual_report, notes=notes)
 
 
+def _embedding_matrix(values, n_rows, dim=None):
+    X = np.asarray(values, dtype=np.float32)
+    if X.ndim != 2 or X.shape[1] == 0:
+        raise ValueError("Embeddings must be a nonempty-width 2-D matrix (n_traces, dim)")
+    if len(X) != n_rows:
+        raise ValueError(f"Trace/embedding mismatch: {n_rows} traces vs {len(X)} embeddings")
+    if dim is not None and X.shape[1] != dim:
+        raise ValueError(f"Embedding dimension mismatch: expected {dim}, got {X.shape[1]}")
+    if not np.isfinite(X).all():
+        raise ValueError("Embeddings must contain only finite values")
+    return X
+
+
 def update(
     new_trace_path: Union[str, Path],
     artifact_dir: Union[str, Path] = ".tracer",
@@ -225,7 +234,10 @@ def update(
     """Refit a TRACER policy with additional traces (continual learning).
 
     Loads the existing traces from the artifact dir, appends the new ones,
-    and re-fits. The .tracer directory is updated in place.
+    and re-fits in a staging directory. Failed validation or fitting leaves the
+    existing artifacts intact. Use one writer per artifact directory; reload
+    readers after update() returns. An explicit config takes precedence over
+    the saved configuration and is never mutated.
     """
     artifact_dir = Path(artifact_dir)
     manifest = load_manifest(artifact_dir / "manifest.json")
@@ -241,10 +253,6 @@ def update(
             new_embeddings = np.load(emb_path)
         else:
             raise FileNotFoundError(f"No embeddings for new traces at {emb_path}")
-
-    # Load existing embeddings
-    existing_index = EmbeddingIndex.load(artifact_dir / "index")
-    X_combined = np.vstack([existing_index.embeddings, new_embeddings.astype(np.float32)])
 
     # Load existing traces so we can re-save the combined set. fit() always
     # writes all_traces.jsonl, so it should be present. If it is missing (e.g.
@@ -263,17 +271,61 @@ def update(
     from tracer.traces.loader import load_traces as _lt
     existing_ds = _lt(existing_traces_path)
     combined_records = existing_ds.records + new_ds.records
+    existing_index = EmbeddingIndex.load(artifact_dir / "index")
+    X_existing = _embedding_matrix(existing_index.embeddings, len(existing_ds), manifest.embedding_dim)
+    X_new = _embedding_matrix(new_embeddings, len(new_ds), X_existing.shape[1])
+    X_combined = np.vstack([X_existing, X_new])
 
     from tracer.types import TraceDataset
     from tracer.traces.loader import save_traces
     combined_ds = TraceDataset(records=combined_records)
-    save_traces(combined_ds, existing_traces_path)
+    if config is None:
+        from tracer.config import EmbeddingConfig
+        config_path = artifact_dir / "config.json"
+        saved = json.loads(config_path.read_text()) if config_path.exists() else {}
+        if "embedding" in saved:
+            saved["embedding"] = EmbeddingConfig(**saved["embedding"])
+        saved.setdefault("target_teacher_agreement", manifest.target_teacher_agreement)
+        config = FitConfig(**saved)
+    else:
+        config = replace(config)
 
-    config = config or FitConfig()
-    if manifest.target_teacher_agreement:
-        config.target_teacher_agreement = manifest.target_teacher_agreement
-
-    return fit(existing_traces_path, artifact_dir, embeddings=X_combined, config=config)
+    # Keep the temporary generation on the same filesystem as the destination.
+    with tempfile.TemporaryDirectory(prefix=f".{artifact_dir.name}-update-",
+                                     dir=artifact_dir.absolute().parent) as temp:
+        root = Path(temp)
+        staged = root / "next"
+        shutil.copytree(artifact_dir, staged)
+        # A refit must not inherit reports or gates from the previous model.
+        for filename in ("pipeline.joblib", "qualitative_report.json", "ood.json",
+                         "index.faiss", "report.html", "sankey.html"):
+            (staged / filename).unlink(missing_ok=True)
+        combined_path = root / "combined.jsonl"
+        save_traces(combined_ds, combined_path)
+        result = fit(combined_path, staged, embeddings=X_combined, config=config)
+        result.artifact_dir = str(artifact_dir)
+        result.manifest.n_retrains = manifest.n_retrains + 1
+        for field_name in ("pipeline_path", "index_path", "config_path", "qualitative_report_path"):
+            path = getattr(result.manifest, field_name)
+            if path is not None:
+                setattr(result.manifest, field_name, str(artifact_dir / Path(path).relative_to(staged)))
+        write_manifest(staged / "manifest.json", result.manifest)
+        # Outside the staging directory so a failed rollback cannot discard it.
+        backup = root.with_name(root.name + "-previous")
+        artifact_dir.rename(backup)
+        try:
+            staged.rename(artifact_dir)
+        except BaseException:
+            try:
+                backup.rename(artifact_dir)
+            except OSError as exc:
+                raise RuntimeError(f"Previous artifacts are preserved at {backup}; restore them before retrying") from exc
+            raise
+        try:
+            shutil.rmtree(backup)
+        except OSError:
+            result.notes.append(f"Update completed; previous artifact backup retained at {backup}")
+    return result
 
 
 def report(artifact_dir: Union[str, Path] = ".tracer") -> ArtifactManifest:

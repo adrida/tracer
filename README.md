@@ -142,7 +142,7 @@ Day 5: 10,000 traces → 92% coverage → 9,200 calls/day saved
 ```
 
 ```python
-tracer.update("new_traces.jsonl", embeddings=X_new)  # refit with new production traces
+tracer.update("new_traces.jsonl", new_embeddings=X_new)  # refit with new production traces
 ```
 
 The parity gate re-calibrates on each update, so coverage only increases when the surrogate actually earns it.

@@ -14,7 +14,7 @@ Zero external dependencies - uses http.server from stdlib.
 from __future__ import annotations
 
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Union
 
@@ -26,6 +26,10 @@ _manifest = None
 
 
 class _Handler(BaseHTTPRequestHandler):
+
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(10)
 
     def do_GET(self):
         if self.path == "/health":
@@ -65,6 +69,8 @@ class _Handler(BaseHTTPRequestHandler):
             x = np.asarray(emb, dtype=np.float32)
             out = _router.predict(x)
             self._json_response(200, out)
+        except (ValueError, TypeError) as e:
+            self._json_response(400, {"error": str(e)})
         except Exception as e:
             self._json_response(500, {"error": str(e)})
 
@@ -83,34 +89,43 @@ class _Handler(BaseHTTPRequestHandler):
                 "handled": out["handled"].tolist(),
             }
             self._json_response(200, result)
+        except (ValueError, TypeError) as e:
+            self._json_response(400, {"error": str(e)})
         except Exception as e:
             self._json_response(500, {"error": str(e)})
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
-        if length == 0:
-            raise ValueError("empty request body")
+        if length <= 0 or length > 8 * 1024 * 1024:
+            raise ValueError("request body must be between 1 byte and 8 MiB")
         raw = self.rfile.read(length)
-        return json.loads(raw)
+        if len(raw) != length:
+            raise ValueError("incomplete request body")
+        body = json.loads(raw)
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        return body
 
     def _json_response(self, code: int, data: dict):
         body = json.dumps(data, default=str).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
 
     def log_message(self, fmt, *args):
         # Quiet logging - only errors
-        if args and str(args[1]).startswith("5"):
+        if len(args) > 1 and str(args[1]).startswith("5"):
             super().log_message(fmt, *args)
 
 
 def serve(
     artifact_dir: Union[str, Path] = ".tracer",
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8000,
 ):
     """Start a prediction server for a fitted TRACER policy.
@@ -118,7 +133,7 @@ def serve(
     Parameters
     ----------
     artifact_dir : path to .tracer/ directory
-    host : bind address (default: 0.0.0.0)
+    host : bind address (default: 127.0.0.1; set explicitly for remote access)
     port : listen port (default: 8000)
     """
     global _router, _manifest
@@ -130,7 +145,7 @@ def serve(
     _manifest = load_manifest(artifact_dir / "manifest.json")
     _router = Router.load(artifact_dir)
 
-    server = HTTPServer((host, port), _Handler)
+    server = ThreadingHTTPServer((host, port), _Handler)
     method = _manifest.selected_method or "none"
     cov = f"{_manifest.coverage_cal:.1%}" if _manifest.coverage_cal else "n/a"
     print(f"\n  TRACER serve")
@@ -147,4 +162,5 @@ def serve(
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n  Shutting down.")
-        server.shutdown()
+    finally:
+        server.server_close()
