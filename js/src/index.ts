@@ -375,6 +375,9 @@ function getEnv(name: string): string | undefined {
 export class LocalFileSink implements Sink {
   readonly path: string;
   constructor(name: string, dir: string = ".tracer/watch") {
+    if (typeof name !== "string" || name.length > 128 || !/^[A-Za-z0-9]/.test(name) || /[^A-Za-z0-9._-]/.test(name)) {
+      throw new Error("Watcher names must start with a letter or digit and contain only letters, digits, '.', '_' or '-' (max 128 characters)");
+    }
     this.path = path.join(dir, `${name}.jsonl`);
     try {
       fs.mkdirSync(dir, { recursive: true });

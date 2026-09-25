@@ -372,3 +372,26 @@ describe("watch factory", () => {
     expect(w).toBeInstanceOf(Watcher);
   });
 });
+
+// Names are filenames on both POSIX and Windows.
+describe("LocalFileSink path boundaries", () => {
+  it.each(["../escape", "/absolute", "..\\escape", ".", "..", "", "trailing\n", "line\nbreak", "nul\0byte", "x".repeat(129)])("rejects unsafe name %j", (name) => {
+    const dir = tmpDir();
+    try {
+      expect(() => new LocalFileSink(name, path.join(dir, "watch"))).toThrow(/Watcher names/);
+      expect(fs.existsSync(path.join(dir, "escape.jsonl"))).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("accepts a portable service name", () => {
+    const dir = tmpDir();
+    try {
+      const sink = new LocalFileSink("service-1.production_trace", dir);
+      sink.emit(new GenAISpan({ inputText: "ok" }));
+      expect(fs.existsSync(path.join(dir, "service-1.production_trace.jsonl"))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

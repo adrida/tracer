@@ -43,6 +43,10 @@ class Router:
         self.embedder = embedder
         self._ood_gate = ood_gate
         self._train_embeddings = train_embeddings
+        self._ood_index = None
+        if ood_gate is not None and train_embeddings is not None and len(train_embeddings):
+            from sklearn.neighbors import NearestNeighbors
+            self._ood_index = NearestNeighbors().fit(np.asarray(train_embeddings, dtype=np.float32))
 
     @classmethod
     def load(cls, artifact_dir: Union[str, Path], embedder=None) -> "Router":
@@ -86,7 +90,7 @@ class Router:
             return np.zeros(len(X), dtype=bool)
         from tracer.fit.ood import ood_mask
         labels = [self._idx_to_label.get(int(p), "?") for p in preds]
-        return ood_mask(X, self._train_embeddings, labels, self._ood_gate)
+        return ood_mask(X, self._train_embeddings, labels, self._ood_gate, index=self._ood_index)
 
     def _to_embedding(self, input) -> np.ndarray:
         """Convert input (text or array) to a (dim,) float32 embedding."""
@@ -131,6 +135,8 @@ class Router:
         dict with keys: label, decision ("handled"/"deferred"), accept_score, stage
         """
         embedding = self._to_embedding(input)
+        if embedding.ndim != 1 or not np.isfinite(embedding).all():
+            raise ValueError("A single embedding must be a finite 1-D vector")
         expected_dim = self.manifest.embedding_dim
         if expected_dim is not None and embedding.shape[-1] != expected_dim:
             raise ValueError(
@@ -175,6 +181,8 @@ class Router:
         """
         from tracer.fit.pipeline import route_pipeline
         X = self._to_embeddings(inputs)
+        if X.ndim != 2 or not np.isfinite(X).all():
+            raise ValueError("Batch embeddings must be a finite 2-D matrix")
         expected_dim = self.manifest.embedding_dim
         if expected_dim is not None and X.shape[-1] != expected_dim:
             raise ValueError(
@@ -186,6 +194,7 @@ class Router:
         if self._ood_gate is not None and np.asarray(handled).any():
             ood = self._ood_flags(X, preds)
             handled = np.asarray(handled) & ~ood
+            stage_id = np.where(handled, stage_id, -1)
         labels = []
         decisions = []
         for i in range(len(X)):

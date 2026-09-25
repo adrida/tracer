@@ -119,7 +119,7 @@ def _accept_features(probs: np.ndarray) -> np.ndarray:
     return np.column_stack([top1, top2, margin, entropy])
 
 
-def _fit_acceptor(probs, y_pred, y_teacher):
+def _fit_acceptor(probs, y_pred, y_teacher, seed=42):
     correct = (y_pred == y_teacher).astype(int)
     feats = _accept_features(probs)
     ok = np.isfinite(feats).all(axis=1)
@@ -128,7 +128,7 @@ def _fit_acceptor(probs, y_pred, y_teacher):
         return None
     clf = Pipeline([
         ("scale", StandardScaler()),
-        ("clf", LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)),
+        ("clf", LogisticRegression(max_iter=1000, solver="lbfgs", random_state=seed)),
     ])
     clf.fit(feats, correct)
     return clf
@@ -140,7 +140,8 @@ def _accept_scores(acceptor, probs):
     return acceptor.predict_proba(_accept_features(probs))[:, 1]
 
 
-def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_accept=10):
+def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_accept=10,
+                         seed=42):
     """Choose the accept threshold on a held-out lower bound, then check it generalises.
 
     Earlier iterations sat at two extremes. The original gate selected the
@@ -172,12 +173,11 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
     n = len(scores)
     holdout = False
     if n >= 40:
-        s_idx, v_idx = _holdout_indices(y_teacher, 0.7)  # 70% select / 30% verify
+        s_idx, v_idx = _holdout_indices(y_teacher, 0.7, seed=seed)
         if len(s_idx) >= 20 and len(v_idx) >= 12:
             holdout = True
     if not holdout:
         # Too little data to hold out: single-set CP lower-bound gate over all rows.
-        best = None
         for t in np.unique(np.sort(scores)):
             acc = scores >= t
             n_acc = int(acc.sum())
@@ -185,13 +185,11 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
                 continue
             k_acc = int((preds[acc] == y_teacher[acc]).sum())
             if _cp_lower(k_acc, n_acc, alpha) >= target_ta:
-                best = (float(t), k_acc, n_acc)  # keep lowest-threshold (max coverage)
-        if best is None:
-            return None
-        t, k_acc, n_acc = best
-        return {"threshold": t, "teacher_agreement": float(k_acc / n_acc),
-                "teacher_agreement_lower": float(_cp_lower(k_acc, n_acc, alpha)),
-                "coverage": float((scores >= t).mean()), "holdout": False}
+                # Thresholds are ascending: the first eligible set has maximum coverage.
+                return {"threshold": float(t), "teacher_agreement": float(k_acc / n_acc),
+                        "teacher_agreement_lower": float(_cp_lower(k_acc, n_acc, alpha)),
+                        "coverage": float(acc.mean()), "holdout": False}
+        return None
 
     s_sel, p_sel, y_sel = scores[s_idx], preds[s_idx], y_teacher[s_idx]
     s_ver, p_ver, y_ver = scores[v_idx], preds[v_idx], y_teacher[v_idx]
@@ -233,12 +231,13 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
 
 def _predict(clf, X):
     probs = clf.predict_proba(X)
-    preds = probs.argmax(axis=1).astype(int)
+    # A residual stage may only have seen a subset of the global label ids.
+    preds = np.take(clf.classes_, probs.argmax(axis=1)).astype(int)
     return preds, probs
 
 
 def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-                 skip: Iterable[str] = ()):
+                 skip: Iterable[str] = (), seed=42):
     """Global pipeline: one surrogate, accept all if the agreement lower bound
     clears the target. Gating on the Clopper-Pearson lower bound (not the raw
     point estimate) stops a small or lucky calibration set from certifying an
@@ -251,7 +250,7 @@ def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = No
     log(f"  build_global: surrogate sweep on {len(split['X_train'])} train / {len(split['X_val'])} val")
     clf, name, val_m = search_best_surrogate(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
-        on_candidate=_candidate_log(log), skip=skip)
+        on_candidate=_candidate_log(log), skip=skip, seed=seed)
     if clf is None:
         log("  build_global: all surrogate candidates failed (no model trained)")
         return {"method": "global", "stages": [], "summary": {
@@ -293,23 +292,23 @@ def _candidate_log(log: LogFn) -> Callable[..., None]:
 
 def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, stage_name,
                            alpha: float = 0.1,
-                           log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                           log: Optional[LogFn] = None, skip: Iterable[str] = (), seed=42):
     log = log or _noop_log
     if len(np.unique(y_tr)) < 2 or len(X_val) == 0 or len(X_cal) == 0:
         return None
     t0 = time.perf_counter()
     log(f"  {stage_name}: surrogate sweep on {len(X_tr)} train / {len(X_val)} val")
     clf, name, val_m = search_best_surrogate(
-        X_tr, y_tr, X_val, y_val, on_candidate=_candidate_log(log), skip=skip)
+        X_tr, y_tr, X_val, y_val, on_candidate=_candidate_log(log), skip=skip, seed=seed)
     if clf is None:
         log(f"  {stage_name}: all surrogate candidates failed (no model trained)")
         return None
     log(f"  {stage_name}: surrogate done in {time.perf_counter()-t0:.1f}s  best={name} f1={val_m['teacher_f1']:.3f}")
     preds_val, probs_val = _predict(clf, X_val)
     preds_cal, probs_cal = _predict(clf, X_cal)
-    acceptor = _fit_acceptor(probs_val, preds_val, y_val)
+    acceptor = _fit_acceptor(probs_val, preds_val, y_val, seed=seed)
     scores_cal = _accept_scores(acceptor, probs_cal)
-    ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta, alpha)
+    ti = _calibrate_threshold(scores_cal, preds_cal, y_cal, target_ta, alpha, seed=seed)
     if ti is None:
         return None
     return {"stage_name": stage_name, "model_name": name, "clf": clf,
@@ -324,14 +323,14 @@ def _build_accepting_stage(X_tr, y_tr, X_val, y_val, X_cal, y_cal, target_ta, st
 
 
 def build_l2d(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (), seed=42):
     """L2D: surrogate + acceptor-gated deferral."""
     log = log or _noop_log
     log(f"build_l2d: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        alpha=alpha, log=log, skip=skip)
+        alpha=alpha, log=log, skip=skip, seed=seed)
     if s1 is None:
         return {"method": "l2d", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -345,14 +344,14 @@ def build_l2d(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
 
 
 def build_rsb(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
-              skip: Iterable[str] = ()):
+              skip: Iterable[str] = (), seed=42):
     """RSB: residual two-stage cascade."""
     log = log or _noop_log
     log(f"build_rsb: target_TA={target_ta:.2f}")
     s1 = _build_accepting_stage(
         split["X_train"], split["y_train"], split["X_val"], split["y_val"],
         split["X_cal"], split["y_cal"], target_ta, "stage_1",
-        alpha=alpha, log=log, skip=skip)
+        alpha=alpha, log=log, skip=skip, seed=seed)
     if s1 is None:
         return {"method": "rsb", "stages": [], "summary": {"status": "no_stage", "coverage_cal_total": 0.0}}
     stages = [s1]
@@ -369,7 +368,7 @@ def build_rsb(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
             split["X_val"][rej_val], split["y_val"][rej_val],
             split["X_cal"][rej_cal], split["y_cal"][rej_cal],
             target_ta, "stage_2",
-            alpha=alpha, log=log, skip=skip)
+            alpha=alpha, log=log, skip=skip, seed=seed)
         if s2 is not None:
             stages.append(s2)
 
@@ -449,7 +448,7 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
 
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
                  alpha: float = 0.1,
-                 log: Optional[LogFn] = None, skip: Iterable[str] = ()):
+                 log: Optional[LogFn] = None, skip: Iterable[str] = (), seed=42):
     """Build global/l2d/rsb for each target TA, return best per target.
 
     `alpha` is the confidence level for the deployment lower bound: a candidate
@@ -460,8 +459,8 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "
         f"max_fit_labels={max_fit_labels} alpha={alpha}"
         + (f" skip={tuple(skip)}" if tuple(skip) else ""))
-    X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels)
-    split = _split_buffer(X_fit, y_fit)
+    X_fit, y_fit = _subsample(X, y_teacher, max_fit_labels, seed=seed)
+    split = _split_buffer(X_fit, y_fit, seed=seed)
     log(f"fit_frontier: split -> {len(split['X_train'])} train / "
         f"{len(split['X_val'])} val / {len(split['X_cal'])} cal")
     builders = {"global": build_global, "l2d": build_l2d, "rsb": build_rsb}
@@ -470,7 +469,7 @@ def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
     for target in sorted(set(float(t) for t in targets)):
         candidates = []
         for method_name, builder in builders.items():
-            pipeline = builder(split, target, alpha=alpha, log=log, skip=skip)
+            pipeline = builder(split, target, alpha=alpha, log=log, skip=skip, seed=seed)
             pipeline["summary"]["method"] = method_name
             if pipeline["summary"].get("coverage_cal_total", 0.0) < min_coverage:
                 if pipeline["summary"].get("status") == "ok":

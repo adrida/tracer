@@ -31,7 +31,7 @@ warnings.filterwarnings("ignore")
 SEED = 42
 
 
-def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
+def _candidates(n_samples: int, skip: Iterable[str] = (), seed: int = SEED) -> dict:
     """Return model factory dict.  Factories are callables → fitted-ready estimator.
 
     Pass ``skip=("name", ...)`` to exclude candidates from the sweep, useful
@@ -45,17 +45,17 @@ def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
         "logreg_c1": lambda: Pipeline([
             ("scale", StandardScaler()),
             ("clf", LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs",
-                                       random_state=SEED)),
+                                       random_state=seed)),
         ]),
         "logreg_c10": lambda: Pipeline([
             ("scale", StandardScaler()),
             ("clf", LogisticRegression(C=10.0, max_iter=1000, solver="lbfgs",
-                                       random_state=SEED)),
+                                       random_state=seed)),
         ]),
         "sgd_log": lambda: Pipeline([
             ("scale", StandardScaler()),
             ("clf", SGDClassifier(loss="log_loss", max_iter=200, tol=1e-3,
-                                  random_state=SEED)),
+                                  random_state=seed)),
         ]),
     }
 
@@ -65,33 +65,33 @@ def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
             ("scale", StandardScaler()),
             ("clf", MLPClassifier(hidden_layer_sizes=(256,), alpha=1e-4,
                                   max_iter=140, early_stopping=True,
-                                  random_state=SEED)),
+                                  random_state=seed)),
         ]),
         "mlp_2h": lambda: Pipeline([
             ("scale", StandardScaler()),
             ("clf", MLPClassifier(hidden_layer_sizes=(256, 96), alpha=1e-4,
                                   max_iter=140, early_stopping=True,
-                                  random_state=SEED)),
+                                  random_state=seed)),
         ]),
     }
 
     # ── tree-based (no scaling needed) ────────────────────────────────────────
     trees = {
         "dt": lambda: DecisionTreeClassifier(
-            max_depth=16, min_samples_leaf=2, random_state=SEED),
+            max_depth=16, min_samples_leaf=2, random_state=seed),
         "rf": lambda: RandomForestClassifier(
             n_estimators=200, max_features="sqrt",
-            min_samples_leaf=2, n_jobs=-1, random_state=SEED),
+            min_samples_leaf=2, n_jobs=-1, random_state=seed),
         "et": lambda: ExtraTreesClassifier(
             n_estimators=200, max_features="sqrt",
-            min_samples_leaf=2, n_jobs=-1, random_state=SEED),
+            min_samples_leaf=2, n_jobs=-1, random_state=seed),
     }
 
     # GradientBoosting is slow on large datasets -- skip above 4k
     if n_samples <= 4_000:
         trees["gbt"] = lambda: GradientBoostingClassifier(
             n_estimators=150, max_depth=4, learning_rate=0.1,
-            subsample=0.8, random_state=SEED)
+            subsample=0.8, random_state=seed)
 
     # ── xgboost (optional) ───────────────────────────────────────────────────
     try:
@@ -102,7 +102,7 @@ def _candidates(n_samples: int, skip: Iterable[str] = ()) -> dict:
             n_estimators=200, max_depth=6, learning_rate=0.1,
             subsample=0.8, colsample_bytree=0.8,
             use_label_encoder=False, eval_metric="mlogloss",
-            n_jobs=-1, random_state=SEED, verbosity=0,
+            n_jobs=-1, random_state=seed, verbosity=0,
         )
     except Exception:
         pass
@@ -138,6 +138,7 @@ def search_best_surrogate(
     y_val: np.ndarray,
     on_candidate: Optional[Callable[..., None]] = None,
     skip: Iterable[str] = (),
+    seed: int = SEED,
 ) -> Tuple[Any, str, dict]:
     """Train all candidates and return (best_clf, model_name, metrics).
 
@@ -156,7 +157,7 @@ def search_best_surrogate(
                        dominate wall-time, e.g. ``skip=("gbt",)``.
     """
     n = len(X_train)
-    candidates = _candidates(n, skip=skip)
+    candidates = _candidates(n, skip=skip, seed=seed)
 
     best_clf     = None
     best_name    = None

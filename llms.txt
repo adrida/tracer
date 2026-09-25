@@ -11,7 +11,7 @@ pip install tracer-llm
 tracer.fit("traces.jsonl", embeddings=X) → FitResult
 tracer.load_router(".tracer", embedder=e) → Router
 router.predict("text" or embedding) → {label, decision, accept_score}
-tracer.update("new.jsonl", embeddings=X_new) → FitResult
+tracer.update("new.jsonl", new_embeddings=X_new) → FitResult
 
 ## Trace format (JSONL, one per line)
 {"input": "user text", "teacher": "label_from_llm"}

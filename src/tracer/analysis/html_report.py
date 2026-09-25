@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from pathlib import Path
 from typing import Union
 
@@ -278,7 +279,7 @@ def generate_html_report(
 <h1>Routing Policy</h1>
 <div class="subtitle">
   {n_traces:,} traces &nbsp;·&nbsp; {n_labels} labels
-  &nbsp;·&nbsp; {emb_dim}-dim embeddings
+  &nbsp;·&nbsp; {escape(str(emb_dim))}-dim embeddings
   &nbsp;·&nbsp; target TA = {target_ta:.0%}
 </div>
 
@@ -296,7 +297,7 @@ def generate_html_report(
   <div class="card purple">
     <div class="card-label">Method</div>
     <div class="card-value" style="font-size:1.2rem;margin-top:10px">
-      <span class="badge {method_cls}">{method.upper()}</span>
+      <span class="badge {method_cls}">{escape(str(method).upper())}</span>
     </div>
     <div class="card-sub">selected pipeline</div>
   </div>
@@ -389,7 +390,7 @@ def generate_html_report(
     <tbody>
 """
         for s in sorted(label_slices, key=lambda x: -x["handled_rate"]):
-            label = s["slice_name"].replace("label:", "")
+            label = escape(str(s["slice_name"]).replace("label:", ""))
             hr_v  = s["handled_rate"]
             ta_s  = s.get("teacher_agreement_handled")
             ta_str = f"{ta_s:.1%}" if ta_s is not None else "-"
@@ -397,7 +398,7 @@ def generate_html_report(
                 f'<tr><td><code style="color:#8b949e;font-size:.82rem">{label}</code></td>'
                 f'<td><b style="color:#f0f6fc">{hr_v:.1%}</b></td>'
                 f'<td>{_bar_html(hr_v)}</td>'
-                f'<td style="color:#8b949e">{s["count"]}</td>'
+                f'<td style="color:#8b949e">{escape(str(s["count"]))}</td>'
                 f'<td style="color:#8b949e">{ta_str}</td></tr>\n'
             )
         html += "    </tbody>\n  </table>\n</div>\n"
@@ -408,10 +409,10 @@ def generate_html_report(
             html += '<tr><th>Bucket</th><th>Coverage</th><th style="width:130px"></th><th>Count</th></tr>\n'
             for s in length_slices:
                 html += (
-                    f'<tr><td>{s["slice_name"]}</td>'
+                    f'<tr><td>{escape(str(s["slice_name"]))}</td>'
                     f'<td><b style="color:#f0f6fc">{s["handled_rate"]:.1%}</b></td>'
                     f'<td>{_bar_html(s["handled_rate"])}</td>'
-                    f'<td style="color:#8b949e">{s["count"]}</td></tr>\n'
+                    f'<td style="color:#8b949e">{escape(str(s["count"]))}</td></tr>\n'
                 )
             html += '</table>\n</div>\n'
 
@@ -423,14 +424,14 @@ def generate_html_report(
                 hs = _score_str(p.get("handled_score"))
                 ds = _score_str(p.get("deferred_score"))
                 html += f"""<div class="pair">
-  <div class="pair-intent">{p["teacher_label"]}</div>
+  <div class="pair-intent">{escape(str(p["teacher_label"]))}</div>
   <div class="pair-row">
     <span class="pair-tag pt-local">SURROGATE</span>
-    <span class="pair-text">{p["handled_preview"]}</span>{hs}
+    <span class="pair-text">{escape(str(p["handled_preview"]))}</span>{hs}
   </div>
   <div class="pair-row">
     <span class="pair-tag pt-deferred">→ LLM</span>
-    <span class="pair-text">{p["deferred_preview"]}</span>{ds}
+    <span class="pair-text">{escape(str(p["deferred_preview"]))}</span>{ds}
   </div>
 </div>\n"""
             html += '</div>\n'
@@ -443,18 +444,18 @@ def generate_html_report(
             for ex in handled_ex[:6]:
                 score_str = f'<span class="ex-score">score {ex["accept_score"]:.2f}</span>' if ex.get("accept_score") else ""
                 html += (f'<div class="ex-item handled">'
-                         f'<div class="ex-text">{ex["input_preview"]}</div>'
+                         f'<div class="ex-text">{escape(str(ex["input_preview"]))}</div>'
                          f'<div class="ex-meta">'
-                         f'<span class="ex-label">{ex["teacher_label"]}</span>'
+                         f'<span class="ex-label">{escape(str(ex["teacher_label"]))}</span>'
                          f'{score_str}</div></div>\n')
             html += '</div>\n'
 
             html += '<div class="ex-col">\n<h3>Deferred to teacher</h3>\n'
             for ex in deferred_ex[:6]:
                 html += (f'<div class="ex-item deferred">'
-                         f'<div class="ex-text">{ex["input_preview"]}</div>'
+                         f'<div class="ex-text">{escape(str(ex["input_preview"]))}</div>'
                          f'<div class="ex-meta">'
-                         f'<span class="ex-label">{ex["teacher_label"]}</span>'
+                         f'<span class="ex-label">{escape(str(ex["teacher_label"]))}</span>'
                          f'</div></div>\n')
             html += '</div>\n'
 
@@ -470,7 +471,7 @@ def generate_html_report(
                 prev_bar = int(d["previous_handled_rate"] * 60)
                 cur_bar  = int(d["current_handled_rate"] * 60)
                 html += (
-                    f'<tr><td><code style="color:#8b949e;font-size:.82rem">{d["label"]}</code></td>'
+                    f'<tr><td><code style="color:#8b949e;font-size:.82rem">{escape(str(d["label"]))}</code></td>'
                     f'<td style="color:#8b949e">{d["previous_handled_rate"]:.1%}'
                     f'<div class="delta-bar-bg"><div class="delta-bar-fill" style="width:{prev_bar}px"></div></div></td>'
                     f'<td style="color:#f0f6fc">{d["current_handled_rate"]:.1%}'

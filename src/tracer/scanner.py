@@ -569,7 +569,8 @@ _VIZ_SCRIPT = """<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r1
    var ids=Object.keys(C).map(Number).sort(function(a,b){return (C[b].share||0)-(C[a].share||0);});
    for(var j=0;j<ids.length;j++){ var cl=C[ids[j]]; var lab=cl.label||'?';
      if(seen[lab]){continue;} seen[lab]=1;
-     items.push('<span><i style="background:'+(cl.lc||'#94a3b8')+'"></i>'+esc(lab)+'</span>');
+     var swatch=/^#[0-9a-fA-F]{6}$/.test(cl.lc)?cl.lc:'#94a3b8';
+     items.push('<span><i style="background:'+swatch+'"></i>'+esc(lab)+'</span>');
      if(items.length>=8){ break; } }
    if(ids.length>items.length){ items.push('<span class="legmore">+ more</span>'); }
    legend.innerHTML=items.join('');
@@ -685,7 +686,10 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 
     has_viz = bool(r.projection and r.projection.get("points"))
     viz_block = _VIZ_HTML if has_viz else ""
-    script = _VIZ_SCRIPT.replace("__VIZ_DATA__", _json.dumps(r.projection)) if has_viz else ""
+    # JSON quoting alone does not prevent a label from closing a script element.
+    viz_json = (_json.dumps(r.projection).replace("<", "\\u003c")
+                .replace(">", "\\u003e").replace("&", "\\u0026")) if has_viz else ""
+    script = _VIZ_SCRIPT.replace("__VIZ_DATA__", viz_json) if has_viz else ""
     save_html = f"<p class='save'>{money}</p>" if money else ""
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">

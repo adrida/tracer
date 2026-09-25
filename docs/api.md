@@ -118,9 +118,16 @@ tracer.update(
 | `new_trace_path` | `str \| Path` | required | Path to NEW traces JSONL file |
 | `artifact_dir` | `str \| Path` | `".tracer"` | Existing artifact directory to update |
 | `new_embeddings` | `np.ndarray \| None` | `None` | Embeddings for the NEW traces only `(n_new, dim)` |
-| `config` | `FitConfig \| None` | `None` | If None, re-uses `target_teacher_agreement` from the existing manifest |
+| `config` | `FitConfig \| None` | `None` | If None, reuses the saved fit configuration. An explicit configuration takes precedence and is not mutated. |
 
 **Returns:** `FitResult` (same as `fit()`)
+
+The replacement model is fitted in a staging directory. Validation or fitting
+failures leave existing artifacts intact; a failed publication restores the
+previous directory. If restoration itself fails, the exception identifies the
+retained backup. Keep one writer per artifact directory and reload readers only
+after `update()` returns: directory publication is not a concurrent-reader or
+power-loss transaction. Allow disk space for the staged generation and backup.
 
 **Example:**
 

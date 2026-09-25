@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from pathlib import Path
 from typing import Optional, Union
 
@@ -84,7 +85,7 @@ def generate_sankey(
 
     fig.update_layout(
         title=dict(
-            text=title,
+            text=escape(str(title)),
             font=dict(size=15, color=_TEXT, family="Inter, system-ui, sans-serif"),
             x=0.01, y=0.97,
         ),
@@ -131,7 +132,7 @@ def _build_sankey_figure(manifest: dict, qr: dict, top_k: int, dark: bool):
     n_other_labels = len(manifest.get("label_space", [])) - n_top
     has_other = (other_handled + other_deferred) > 0.5
 
-    node_labels = [s["slice_name"].replace("label:", "").replace("_", " ") for s in top]
+    node_labels = [escape(s["slice_name"].replace("label:", "").replace("_", " ")) for s in top]
     if has_other:
         node_labels.append(f"other ({n_other_labels} labels)")
     surrogate_idx = len(node_labels)

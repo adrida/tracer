@@ -5,7 +5,33 @@ versioning.
 
 ## Unreleased
 
+### Fixed
+- Preserve the previous artifact generation when an update fails validation,
+  fitting, or publication. Honor explicit update configuration without mutating
+  the caller, retain saved configuration by default, and increment the fit count.
+- Preserve classifier label IDs in residual stages and select the largest
+  eligible acceptance set during small-data calibration.
+- Keep original embedding scales when building FAISS indexes and reuse the OOD
+  nearest-neighbor index across predictions. Existing FAISS artifacts trained
+  with unnormalized inputs need refitting to recover the original scale.
+- Apply configured seeds to subsampling, splits, calibration, and model training.
+- Record async outputs, errors, cancellation, timing, and parent spans correctly;
+  isolate tracing storage/export failures from application calls.
+- Escape trace and artifact text in reports and reject unsafe watcher filenames
+  in Python and JavaScript.
+- Preserve deferred confidence scores in reports; validate prediction shapes and
+  finite values; report actual file lines for null teacher labels.
+- Handle concurrent HTTP requests and client disconnects, reject malformed or
+  oversized request bodies, and close the server cleanly on interruption.
+- Correct update examples to use `new_embeddings=`.
+
 ### Changed (breaking)
+- The prediction server binds to `127.0.0.1` by default and no longer sends a
+  wildcard CORS header. Explicitly configure a remote bind address when needed;
+  browser deployments should configure CORS at their authenticated proxy.
+- Watcher filenames must start with a letter or digit and use only ASCII
+  letters, digits, dots, underscores, or hyphens, up to 128 characters.
+- Invalid prediction inputs return HTTP 400 rather than 500.
 - Require Python 3.12 or newer; drop support for Python 3.9–3.11. CI tests
   Python 3.12, 3.13, and 3.14, plus the minimum core dependencies on 3.12.
 - Allow NumPy 1.26.4 through 2.x so Python 3.14 can install compatible wheels.
