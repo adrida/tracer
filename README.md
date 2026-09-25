@@ -21,6 +21,8 @@ TRACER learns the decision boundary between "easy" and "hard" inputs directly fr
 pip install tracer-llm
 ```
 
+Requires **Python 3.12+**. CI tests Python 3.12, 3.13, and 3.14.
+
 ## Quickstart
 
 Input: a JSONL file where each line contains the original text (`input`) and the label your LLM assigned (`teacher`).

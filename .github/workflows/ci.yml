@@ -8,10 +8,15 @@ on:
 
 jobs:
   test:
+    name: Python ${{ matrix.python-version }} (${{ matrix.dependencies }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
+        dependencies: [latest]
+        include:
+          - python-version: "3.12"
+            dependencies: minimum
 
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +29,12 @@ jobs:
       - name: Install package and dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          if [ "${{ matrix.dependencies }}" = "minimum" ]; then
+            python -m pip install -e ".[dev]" "numpy==1.26.4" "scikit-learn==1.4.2" "joblib==1.2.0"
+          else
+            python -m pip install -e ".[dev]"
+          fi
+          python -m pip check
 
       - name: Run tests
         run: pytest tests/ -v --tb=short

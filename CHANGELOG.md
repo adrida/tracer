@@ -5,6 +5,14 @@ versioning.
 
 ## Unreleased
 
+### Changed (breaking)
+- Require Python 3.12 or newer; drop support for Python 3.9–3.11. CI tests
+  Python 3.12, 3.13, and 3.14, plus the minimum core dependencies on 3.12.
+- Allow NumPy 1.26.4 through 2.x so Python 3.14 can install compatible wheels.
+  Require scikit-learn 1.4.2+ and joblib 1.2.0+ in core, and PyTorch 2.4.1+
+  for the optional embedding extras. Remove the obsolete NumPy downgrade advice.
+- Build releases and run the documented Python sidecar on Python 3.14.
+
 ### Removed (breaking)
 - The `tracer` command-line executable and command implementations. Use the
   Python APIs for fitting, scanning, updating, reports, and serving predictions.

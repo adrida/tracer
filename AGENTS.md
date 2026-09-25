@@ -14,7 +14,7 @@ pip install tracer-llm                # numpy, scikit-learn, joblib - that's it
 pip install tracer-llm[embeddings]    # adds sentence-transformers (if user needs text-in routing)
 ```
 
-No GPU required. No API keys required for fitting. Works on Python 3.9+.
+No GPU required. No API keys required for fitting. Requires Python 3.12+; CI tests 3.12, 3.13, and 3.14.
 
 ---
 

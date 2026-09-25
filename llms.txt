@@ -4,6 +4,7 @@
 > Turn LLM classification traces into routing policies. Surrogate handles easy traffic; teacher LLM handles hard. Formal quality guarantees.
 
 ## Install
+Requires Python 3.12+. CI tests Python 3.12, 3.13, and 3.14.
 pip install tracer-llm
 
 ## Core API (4 functions)

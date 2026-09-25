@@ -190,7 +190,7 @@ services:
       TRACER_URL: http://tracer:8000
 
   tracer:
-    image: python:3.11-slim
+    image: python:3.14-slim
     working_dir: /app
     volumes:
       - ./.tracer:/app/.tracer:ro

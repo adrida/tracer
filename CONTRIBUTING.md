@@ -56,6 +56,9 @@ we're optimizing for.
 
 ## Setup
 
+Use Python 3.12 or newer. CI tests 3.12, 3.13, and 3.14 with current
+dependencies, plus 3.12 with the minimum supported core dependencies.
+
 ```bash
 git clone https://github.com/adrida/tracer
 cd tracer
