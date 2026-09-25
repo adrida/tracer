@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "TRACER: Trace-Based Adaptive Cost-Efficient Routing. Turn LLM traces into parity-gated routing policies - cut 90%+ of LLM calls with formal guarantees."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 keywords = [
     "llm", "routing", "surrogate", "cost-reduction", "learn-to-defer",
     "conformal-prediction", "machine-learning", "explainability", "xai",
@@ -20,31 +20,27 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "numpy>=1.21,<2.1",
-    "scikit-learn>=1.0",
-    "joblib>=1.1",
+    "numpy>=1.26.4,<3",
+    "scikit-learn>=1.4.2",
+    "joblib>=1.3.2",
 ]
 
 [project.optional-dependencies]
 embeddings = [
     "sentence-transformers>=2.2,<5",
-    "torch>=2.0",
-    "numpy>=1.21,<2.1",
+    "torch>=2.4.1",
 ]
 faiss = ["faiss-cpu>=1.7"]
 notebooks = [
     "faiss-cpu>=1.7",
     "sentence-transformers>=2.2,<5",
-    "torch>=2.0",
-    "numpy>=1.21,<2.1",
+    "torch>=2.4.1",
     "pandas>=1.4",
     "matplotlib>=3.5",
     "datasets>=2.0",
@@ -55,8 +51,7 @@ xgboost = ["xgboost>=1.7"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 all = [
     "sentence-transformers>=2.2,<5",
-    "torch>=2.0",
-    "numpy>=1.21,<2.1",
+    "torch>=2.4.1",
     "faiss-cpu>=1.7",
     "xgboost>=1.7",
     "plotly>=5.0",
@@ -70,9 +65,6 @@ Homepage = "https://github.com/adrida/tracer"
 Repository = "https://github.com/adrida/tracer"
 Documentation = "https://github.com/adrida/tracer#readme"
 "Bug Tracker" = "https://github.com/adrida/tracer/issues"
-
-[project.scripts]
-tracer = "tracer.cli.main:main"
 
 [tool.hatch.version]
 path = "src/tracer/__init__.py"

@@ -1,6 +1,6 @@
 /**
  * Tests for @tracer-llm/watch: spans, OTel mapping, response extraction (both
- * shapes), key-prefix routing, cloud-sink prod-safety + batching/flush, nested
+ * shapes), opt-in generic export, local-only defaults, nested
  * spans, the wrapper/decorator/span forms. All hermetic: no network, temp dirs,
  * fetch is mocked.
  */
@@ -12,9 +12,6 @@ import * as path from "node:path";
 import {
   GenAISpan,
   LocalFileSink,
-  MultiSink,
-  OTLPSink,
-  TracerCloudSink,
   Watcher,
   extractResponse,
   sinkFromEnv,
@@ -297,7 +294,7 @@ describe("extractResponse", () => {
 // ----- sinkFromEnv composition ----------------------------------------------- //
 describe("sinkFromEnv", () => {
   const saved: Record<string, string | undefined> = {};
-  const keys = ["TRACER_WATCH_DIR", "TRACER_CLOUD_KEY", "TRACER_WATCH_OTLP_ENDPOINT"];
+  const keys = ["TRACER_WATCH_DIR", "TRACER_CLOUD_KEY", "TRACER_CLOUD_URL", "TRACER_WATCH_OTLP_ENDPOINT"];
   beforeEach(() => {
     for (const k of keys) saved[k] = process.env[k];
   });
@@ -316,153 +313,53 @@ describe("sinkFromEnv", () => {
     expect(sink).toBeInstanceOf(LocalFileSink);
   });
 
-  it("adds the cloud sink when a key is present", async () => {
-    process.env.TRACER_WATCH_DIR = tmpDir();
-    process.env.TRACER_CLOUD_KEY = "trobs_abc";
-    delete process.env.TRACER_WATCH_OTLP_ENDPOINT;
-    const sink = sinkFromEnv("x") as MultiSink;
-    expect(sink).toBeInstanceOf(MultiSink);
-    const kinds = new Set(sink.sinks.map((s) => s.constructor.name));
-    expect(kinds.has("LocalFileSink")).toBe(true);
-    expect(kinds.has("TracerCloudSink")).toBe(true);
-    await sink.close();
-  });
+  it.each(["trobs_obsolete", "trc_obsolete"])(
+    "old app credentials (%s) never enable network export",
+    async (key) => {
+      const dir = tmpDir();
+      process.env.TRACER_WATCH_DIR = dir;
+      process.env.TRACER_CLOUD_KEY = key;
+      process.env.TRACER_CLOUD_URL = "https://unused.invalid";
+      delete process.env.TRACER_WATCH_OTLP_ENDPOINT;
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        const recorder = watch("local");
+        await recorder.span({ input: "ticket" }, async (span) => {
+          span.setOutput("billing");
+        });
+        await recorder.close();
+        expect(fetchMock).not.toHaveBeenCalled();
+        const saved = JSON.parse(fs.readFileSync(path.join(dir, "local.jsonl"), "utf8"));
+        expect(saved.input_text).toBe("ticket");
+        expect(saved.output_text).toBe("billing");
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
-  it("cloudKey arg routes per-tracer for non-trobs keys", async () => {
-    process.env.TRACER_WATCH_DIR = tmpDir();
-    delete process.env.TRACER_CLOUD_KEY;
-    const sink = sinkFromEnv("x", "trc_xyz") as MultiSink;
-    expect(sink).toBeInstanceOf(MultiSink);
-    const cloud = sink.sinks.find((s) => s instanceof TracerCloudSink) as TracerCloudSink;
-    expect(cloud).toBeTruthy();
-    expect(cloud.observe).toBe(false);
-    await sink.close();
-  });
-
-  it("adds the OTLP sink when an endpoint is present", async () => {
-    process.env.TRACER_WATCH_DIR = tmpDir();
-    delete process.env.TRACER_CLOUD_KEY;
+  it("exports only to the explicitly configured generic endpoint", async () => {
+    const dir = tmpDir();
+    process.env.TRACER_WATCH_DIR = dir;
+    process.env.TRACER_CLOUD_KEY = "trobs_obsolete";
     process.env.TRACER_WATCH_OTLP_ENDPOINT = "http://collector/v1/traces";
-    const sink = sinkFromEnv("x") as MultiSink;
-    expect(sink.sinks.some((s) => s instanceof OTLPSink)).toBe(true);
-  });
-});
-
-// ----- TracerCloudSink: routing, mapping, prod-safety, batching -------------- //
-describe("TracerCloudSink", () => {
-  it("routes by key prefix", async () => {
-    const obs = new TracerCloudSink("trobs_k", { baseUrl: "http://x" });
-    const ing = new TracerCloudSink("trc_k", { baseUrl: "http://x" });
-    expect(obs.path).toBe("/v1/observe");
-    expect(obs.observe).toBe(true);
-    expect(ing.path).toBe("/v1/ingest");
-    expect(ing.observe).toBe(false);
-    await obs.close();
-    await ing.close();
-  });
-
-  it("observe event shape", async () => {
-    const s = new TracerCloudSink("trobs_k", { baseUrl: "http://x" });
-    const span = new GenAISpan({
-      system: "provider-x",
-      requestModel: "model-x",
-      responseModel: "model-x",
-      inputText: "in",
-      outputText: "out",
-      inputTokens: 5,
-      outputTokens: 2,
-      costUsd: 0.001,
-      status: "ok",
-      traceId: "t1",
-    });
-    const e = s.event(span);
-    expect(e.input).toBe("in");
-    expect(e.output).toBe("out");
-    expect(e.model).toBe("model-x");
-    expect(e.prompt_tokens).toBe(5);
-    expect(e.completion_tokens).toBe(2);
-    expect(e.cost_usd).toBe(0.001);
-    await s.close();
-  });
-
-  it("ingest event shape", async () => {
-    const s = new TracerCloudSink("trc_k", { baseUrl: "http://x" });
-    const span = new GenAISpan({ requestModel: "model-x", inputText: "in", outputText: "out", costUsd: 0.002 });
-    const e = s.event(span);
-    expect(e.input).toBe("in");
-    expect(e.teacher).toBe("out");
-    expect(e.output).toBe("out");
-    expect(e.model).toBe("model-x");
-    await s.close();
-  });
-
-  it("post builds the request (url, auth, UA, body) via global fetch", async () => {
-    let seen: { url?: string; headers?: Record<string, string>; body?: string } = {};
-    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
-      seen = {
-        url,
-        headers: init.headers as Record<string, string>,
-        body: init.body as string,
-      };
-      return { text: async () => "{}" } as any;
-    });
+    const fetchMock = vi.fn(async () => ({ text: async () => "{}" }));
     vi.stubGlobal("fetch", fetchMock);
-    const s = new TracerCloudSink("trobs_k", { baseUrl: "http://host", source: "app" });
-    await s.post([{ input: "x" }]);
-    expect(seen.url).toBe("http://host/v1/observe");
-    expect(seen.headers!.Authorization).toBe("Bearer trobs_k");
-    expect(String(seen.headers!["User-Agent"]).toLowerCase()).toContain("tracer-watch");
-    expect(JSON.parse(seen.body!)).toEqual({ events: [{ input: "x" }] });
-    await s.close();
-    vi.unstubAllGlobals();
-  });
-
-  it("ingest post wraps events with source", async () => {
-    let body: any;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => {
-        body = JSON.parse(init.body as string);
-        return { text: async () => "{}" } as any;
-      }),
-    );
-    const s = new TracerCloudSink("trc_k", { baseUrl: "http://host", source: "app" });
-    await s.post([{ input: "x" }]);
-    expect(body).toEqual({ source: "app", events: [{ input: "x" }] });
-    await s.close();
-    vi.unstubAllGlobals();
-  });
-
-  it("post swallows errors (prod-safe): a throwing fetch must not reject", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("network down");
-      }),
-    );
-    const s = new TracerCloudSink("trobs_k", { baseUrl: "http://host" });
-    await expect(s.post([{ input: "x" }])).resolves.toBeUndefined();
-    await s.close();
-    vi.unstubAllGlobals();
-  });
-
-  it("emit + flush on close (batched) via mocked fetch", async () => {
-    const posted: any[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => {
-        posted.push(JSON.parse(init.body as string));
-        return { text: async () => "{}" } as any;
-      }),
-    );
-    const s = new TracerCloudSink("trobs_k", { baseUrl: "http://host", flushIntervalMs: 50 });
-    s.emit(new GenAISpan({ inputText: "a", outputText: "b" }));
-    s.emit(new GenAISpan({ inputText: "c", outputText: "d" }));
-    await s.close(); // flushes the queue
-    const flat = posted.flatMap((b) => b.events);
-    expect(flat).toHaveLength(2);
-    expect(new Set(flat.map((e: any) => e.input))).toEqual(new Set(["a", "c"]));
-    vi.unstubAllGlobals();
+    try {
+      const recorder = watch("export");
+      await recorder.span({ input: "ticket" }, async (span) => {
+        span.setOutput("billing");
+      });
+      await recorder.close();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("http://collector/v1/traces");
+      expect(JSON.parse(options.body as string).attributes["gen_ai.operation.name"]).toBe("chat");
+      expect(fs.existsSync(path.join(dir, "export.jsonl"))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

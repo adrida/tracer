@@ -1,17 +1,14 @@
 """Unit tests for tracer.watch: spans, sinks, the decorator/context manager,
-env-driven sink composition, and the Tracer Cloud sink (mapping + prod-safety).
+and opt-in generic export with local-only defaults.
 All hermetic: no network, temp dirs only."""
 import json
-import os
 
 import pytest
 
 from tracer.watch import (
     GenAISpan,
     LocalFileSink,
-    MultiSink,
     OTLPSink,
-    TracerCloudSink,
     Watcher,
     watch,
 )
@@ -104,113 +101,12 @@ def test_sink_from_env_local_only(tmp_path, monkeypatch):
     assert isinstance(sink, LocalFileSink)
 
 
-def test_sink_from_env_adds_cloud_when_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("TRACER_WATCH_DIR", str(tmp_path))
-    monkeypatch.setenv("TRACER_CLOUD_KEY", "trobs_abc")
-    monkeypatch.delenv("TRACER_WATCH_OTLP_ENDPOINT", raising=False)
-    sink = Watcher._sink_from_env("x")
-    assert isinstance(sink, MultiSink)
-    kinds = {type(s).__name__ for s in sink.sinks}
-    assert "LocalFileSink" in kinds and "TracerCloudSink" in kinds
-    for s in sink.sinks:
-        if isinstance(s, TracerCloudSink):
-            s.close()
-
-
-def test_cloud_key_kwarg_beats_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("TRACER_WATCH_DIR", str(tmp_path))
-    monkeypatch.delenv("TRACER_CLOUD_KEY", raising=False)
-    sink = Watcher._sink_from_env("x", cloud_key="trc_xyz")
-    assert isinstance(sink, MultiSink)
-    cloud = [s for s in sink.sinks if isinstance(s, TracerCloudSink)]
-    assert cloud and cloud[0]._observe is False  # trc_ -> per-tracer /v1/ingest
-    cloud[0].close()
-
-
 def test_sink_from_env_adds_otlp(tmp_path, monkeypatch):
     monkeypatch.setenv("TRACER_WATCH_DIR", str(tmp_path))
     monkeypatch.delenv("TRACER_CLOUD_KEY", raising=False)
     monkeypatch.setenv("TRACER_WATCH_OTLP_ENDPOINT", "http://collector/v1/traces")
     sink = Watcher._sink_from_env("x")
     assert any(isinstance(s, OTLPSink) for s in sink.sinks)
-
-
-# ----- TracerCloudSink: routing + mapping + prod-safety ----------------------- #
-def test_cloud_sink_routes_by_key_prefix():
-    obs = TracerCloudSink("trobs_k", base_url="http://x"); obs.close()
-    ing = TracerCloudSink("trc_k", base_url="http://x"); ing.close()
-    assert obs.path == "/v1/observe" and obs._observe is True
-    assert ing.path == "/v1/ingest" and ing._observe is False
-
-
-def test_cloud_sink_observe_event_shape():
-    s = TracerCloudSink("trobs_k", base_url="http://x"); s.close()
-    span = GenAISpan(system="openai", request_model="gpt-4o", response_model="gpt-4o",
-                     input_text="in", output_text="out", input_tokens=5, output_tokens=2,
-                     cost_usd=0.001, status="ok", trace_id="t1")
-    e = s._event(span)
-    assert e["input"] == "in" and e["output"] == "out"
-    assert e["model"] == "gpt-4o"
-    assert e["prompt_tokens"] == 5 and e["completion_tokens"] == 2
-    assert e["cost_usd"] == 0.001
-
-
-def test_cloud_sink_ingest_event_shape():
-    s = TracerCloudSink("trc_k", base_url="http://x"); s.close()
-    span = GenAISpan(request_model="gpt-4o", input_text="in", output_text="out", cost_usd=0.002)
-    e = s._event(span)
-    assert e["input"] == "in"
-    assert e["teacher"] == "out" and e["output"] == "out"
-    assert e["model"] == "gpt-4o"
-
-
-def test_cloud_sink_post_builds_request(monkeypatch):
-    import urllib.request
-    seen = {}
-    class FakeResp:
-        def read(self): return b"{}"
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-    def fake_urlopen(req, timeout=None):
-        seen["url"] = req.full_url
-        seen["headers"] = {k.lower(): v for k, v in req.header_items()}
-        seen["body"] = req.data
-        return FakeResp()
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    s = TracerCloudSink("trobs_k", base_url="http://host", source="app"); s.close()
-    s._post([{"input": "x"}])
-    assert seen["url"] == "http://host/v1/observe"
-    assert seen["headers"]["authorization"] == "Bearer trobs_k"
-    assert "tracer-watch" in seen["headers"]["user-agent"].lower()
-    assert json.loads(seen["body"]) == {"events": [{"input": "x"}]}
-
-
-def test_cloud_sink_post_swallows_errors(monkeypatch):
-    import urllib.request
-    def boom(req, timeout=None):
-        raise OSError("network down")
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
-    s = TracerCloudSink("trobs_k", base_url="http://host"); s.close()
-    # Must NOT raise, telemetry can never crash the host.
-    s._post([{"input": "x"}])
-
-
-def test_cloud_sink_emit_flush_via_close(monkeypatch):
-    import urllib.request
-    posted = []
-    class FakeResp:
-        def read(self): return b"{}"
-    def fake_urlopen(req, timeout=None):
-        posted.append(json.loads(req.data))
-        return FakeResp()
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    s = TracerCloudSink("trobs_k", base_url="http://host", flush_interval=0.05)
-    s.emit(GenAISpan(input_text="a", output_text="b"))
-    s.emit(GenAISpan(input_text="c", output_text="d"))
-    s.close()  # flushes the queue
-    flat = [ev for batch in posted for ev in batch["events"]]
-    assert len(flat) == 2
-    assert {e["input"] for e in flat} == {"a", "c"}
 
 
 def test_watch_factory_returns_watcher(tmp_path, monkeypatch):
@@ -294,3 +190,47 @@ class _ListSink:
     def __init__(self, out): self.out = out
     def emit(self, span): self.out.append(span)
     def close(self): pass
+
+
+@pytest.mark.parametrize("legacy_key", ["trobs_obsolete", "trc_obsolete"])
+def test_legacy_app_configuration_cannot_export(tmp_path, monkeypatch, legacy_key):
+    """Upgrades must not keep streaming data because old credentials remain set."""
+    import urllib.request
+    monkeypatch.setenv("TRACER_WATCH_DIR", str(tmp_path))
+    monkeypatch.setenv("TRACER_CLOUD_KEY", legacy_key)
+    monkeypatch.setenv("TRACER_CLOUD_URL", "https://unused.invalid")
+    monkeypatch.delenv("TRACER_WATCH_OTLP_ENDPOINT", raising=False)
+    calls = []
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: calls.append(a))
+    recorder = watch("local")
+    with recorder.span("ticket") as span:
+        span.set_output("billing")
+    recorder.sink.close()
+    assert calls == []
+    saved = json.loads((tmp_path / "local.jsonl").read_text())
+    assert saved["input_text"] == "ticket"
+    assert saved["output_text"] == "billing"
+
+
+def test_explicit_otlp_export_still_works(tmp_path, monkeypatch):
+    import urllib.request
+    monkeypatch.setenv("TRACER_WATCH_DIR", str(tmp_path))
+    monkeypatch.setenv("TRACER_WATCH_OTLP_ENDPOINT", "http://collector/v1/traces")
+    monkeypatch.setenv("TRACER_WATCH_OTLP_HEADERS", "Authorization=Bearer test")
+    monkeypatch.setenv("TRACER_CLOUD_KEY", "trobs_obsolete")
+    seen = []
+    class Response:
+        def read(self): return b"{}"
+    def capture(req, **kwargs):
+        seen.append(req)
+        return Response()
+    monkeypatch.setattr(urllib.request, "urlopen", capture)
+    recorder = watch("export")
+    with recorder.span("ticket") as span:
+        span.set_output("billing")
+    recorder.sink.close()
+    assert len(seen) == 1
+    assert seen[0].full_url == "http://collector/v1/traces"
+    assert seen[0].get_header("Authorization") == "Bearer test"
+    assert json.loads(seen[0].data)["attributes"]["gen_ai.operation.name"] == "chat"
+    assert (tmp_path / "export.jsonl").is_file()

@@ -13,8 +13,7 @@
  *   - The same span maps 1:1 to a TRACER trace record (input + the model's
  *     answer), so watched traffic feeds the optimizer directly.
  *   - Exporters (sinks) are pluggable. `LocalFileSink` (default, no key) writes
- *     JSONL. `TracerCloudSink` streams the same spans to the free Tracer Cloud
- *     observability with one key. `OTLPSink` fans the SAME spans out over
+ *     JSONL. `OTLPSink` exports spans to an explicitly configured endpoint over
  *     OTLP/HTTP to any OTLP/HTTP backend, zero code change.
  *
  * Zero runtime dependencies (Node stdlib only). Prod-safe: telemetry never
@@ -437,7 +436,7 @@ export class OTLPSink implements Sink {
   }
 }
 
-/** Fan-out to several sinks (e.g. local + cloud + your own OTLP backend). */
+/** Fan-out to several sinks (e.g. local + your own OTLP backend). */
 export class MultiSink implements Sink {
   readonly sinks: Sink[];
   constructor(sinks: Sink[]) {
@@ -465,165 +464,15 @@ export class MultiSink implements Sink {
   }
 }
 
-// Default Tracer Cloud endpoint. Override with TRACER_CLOUD_URL.
-const DEFAULT_CLOUD_URL = "https://app.tracerml.ai";
-const USER_AGENT = `tracer-watch-js/${VERSION}`;
-
-export interface TracerCloudSinkOptions {
-  baseUrl?: string;
-  source?: string;
-  batchSize?: number;
-  flushIntervalMs?: number;
-  timeoutMs?: number;
-  maxQueue?: number;
-}
-
-/**
- * Stream observed spans to Tracer Cloud (free observability).
- *
- * Point it at a Tracer Cloud key and your watched traffic shows up in the
- * dashboard within seconds. No login, no SDK -- just a key (`cloudKey=...` or
- * `TRACER_CLOUD_KEY`).
- *
- * Routes by key type, matching the two product paths:
- *   - `trobs_*` (workspace ingest key) -> `/v1/observe` (tenant-wide)
- *   - otherwise (per-tracer gateway)   -> `/v1/ingest`  (bound to a tracer)
- *
- * Prod-safe: sends are batched on a timer, so a slow or down endpoint never
- * adds latency to (or crashes) the host function. Drops silently on overflow /
- * error; set TRACER_WATCH_DEBUG=1 to see why.
- */
-export class TracerCloudSink implements Sink {
-  readonly key: string;
-  readonly baseUrl: string;
-  readonly path: string;
-  readonly source: string;
-  readonly batchSize: number;
-  readonly flushIntervalMs: number;
-  readonly timeoutMs: number;
-  readonly maxQueue: number;
-  /** trobs_ = workspace ingest key -> /v1/observe; otherwise per-tracer -> /v1/ingest */
-  readonly observe: boolean;
-
-  private queue: Array<Record<string, unknown>> = [];
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private closed = false;
-
-  constructor(key: string, opts: TracerCloudSinkOptions = {}) {
-    this.key = key;
-    this.baseUrl = (opts.baseUrl || getEnv("TRACER_CLOUD_URL") || DEFAULT_CLOUD_URL).replace(
-      /\/+$/,
-      "",
-    );
-    this.observe = key.startsWith("trobs_");
-    this.path = this.observe ? "/v1/observe" : "/v1/ingest";
-    this.source = opts.source ?? "watch";
-    this.batchSize = opts.batchSize ?? 25;
-    this.flushIntervalMs = opts.flushIntervalMs ?? 2000;
-    this.timeoutMs = opts.timeoutMs ?? 10000;
-    this.maxQueue = opts.maxQueue ?? 10000;
-
-    this.timer = setInterval(() => {
-      void this.flush();
-    }, this.flushIntervalMs);
-    // Do not keep the event loop alive just for telemetry.
-    if (this.timer && typeof (this.timer as { unref?: () => void }).unref === "function") {
-      (this.timer as { unref?: () => void }).unref!();
-    }
-  }
-
-  /** Internal event mapping (exposed for tests). */
-  event(span: GenAISpan): Record<string, unknown> {
-    if (this.observe) {
-      return {
-        ts: span.startTime || null,
-        system: span.system ?? null,
-        model: span.responseModel || span.requestModel || null,
-        input: span.inputText,
-        output: span.outputText,
-        prompt_tokens: span.inputTokens ?? null,
-        completion_tokens: span.outputTokens ?? null,
-        latency_ms: span.latencyMs ?? null,
-        cost_usd: span.costUsd ?? null,
-        status: span.status,
-        trace_id: span.traceId,
-        tags: span.tags,
-      };
-    }
-    // per-tracer /v1/ingest shape
-    return {
-      input: span.inputText,
-      teacher: span.outputText || null,
-      output: span.outputText || null,
-      model: span.responseModel || span.requestModel || "observed",
-      cost_usd: span.costUsd ?? null,
-      ts: span.startTime || null,
-    };
-  }
-
-  emit(span: GenAISpan): void {
-    try {
-      if (this.queue.length >= this.maxQueue) {
-        debugLog("cloud queue full, dropping span");
-        return;
-      }
-      this.queue.push(this.event(span));
-    } catch (e) {
-      debugLog(`cloud enqueue failed: ${String(e)}`);
-    }
-  }
-
-  /** POST one batch. Exposed for tests. Never throws. */
-  async post(events: Array<Record<string, unknown>>): Promise<void> {
-    const body = this.observe ? { events } : { source: this.source, events };
-    const headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${this.key}`,
-      // A real UA: a default UA can trip bot protection (403/1010) at the edge.
-      "User-Agent": USER_AGENT,
-    };
-    try {
-      await postJson(`${this.baseUrl}${this.path}`, body, headers, this.timeoutMs);
-    } catch (e) {
-      // never let telemetry crash or block the host
-      debugLog(`cloud export failed: ${String(e)}`);
-    }
-  }
-
-  /** Drain and POST everything currently queued, in batches. */
-  async flush(): Promise<void> {
-    while (this.queue.length) {
-      const batch = this.queue.splice(0, this.batchSize);
-      await this.post(batch);
-    }
-  }
-
-  async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = undefined;
-    }
-    await this.flush();
-  }
-}
-
 /**
  * Compose the default sink chain from the environment:
  *   LocalFileSink (always)
- *   + TracerCloudSink (if cloudKey or TRACER_CLOUD_KEY)
  *   + OTLPSink (if TRACER_WATCH_OTLP_ENDPOINT [+ TRACER_WATCH_OTLP_HEADERS])
  */
-export function sinkFromEnv(name: string, cloudKey?: string): Sink {
+export function sinkFromEnv(name: string): Sink {
   const dir = getEnv("TRACER_WATCH_DIR") || ".tracer/watch";
   const local = new LocalFileSink(name, dir);
   const sinks: Sink[] = [local];
-
-  const key = cloudKey || getEnv("TRACER_CLOUD_KEY");
-  if (key) {
-    sinks.push(new TracerCloudSink(key, { source: name }));
-  }
 
   const endpoint = getEnv("TRACER_WATCH_OTLP_ENDPOINT");
   if (endpoint) {
@@ -679,7 +528,7 @@ async function postJson(
 }
 
 // --------------------------------------------------------------------------- //
-// Watcher: the wrapper / decorator / async span. The one object the cloud reuses.
+// Watcher: the wrapper / decorator / async span. Records calls to local or explicitly configured sinks.
 // --------------------------------------------------------------------------- //
 
 /** Tracks the currently-open span so nested calls form a trace tree. */
@@ -735,10 +584,8 @@ export interface WatchOptions {
   system?: string;
   model?: string;
   operation?: string;
-  cloudKey?: string;
   sink?: Sink;
   defaultTags?: string[];
-  baseUrl?: string;
   extractInput?: (args: unknown[]) => string;
   extractOutput?: (result: unknown) => string;
 }
@@ -842,23 +689,11 @@ class WatcherClass {
     this.system = opts.system;
     this.model = opts.model;
     this.operation = opts.operation ?? "chat";
-    // Default: local-only. Free Tracer Cloud streaming turns on with a single
-    // key (cloudKey or TRACER_CLOUD_KEY). OTLP fan-out via TRACER_WATCH_OTLP_*.
-    this.sink = opts.sink ?? this.sinkFromEnvWithBase(name, opts.cloudKey, opts.baseUrl);
+    // Local-only unless a custom sink or generic export endpoint is configured.
+    this.sink = opts.sink ?? sinkFromEnv(name);
     this.defaultTags = [...(opts.defaultTags || [])];
     this.extractInput = opts.extractInput ?? defaultExtractInput;
     this.extractOutput = opts.extractOutput ?? defaultExtractOutput;
-  }
-
-  private sinkFromEnvWithBase(name: string, cloudKey?: string, baseUrl?: string): Sink {
-    // sinkFromEnv handles the local + OTLP + cloud composition. When a baseUrl
-    // is supplied we rebuild the cloud sink with it so opts.baseUrl is honored.
-    const base = sinkFromEnv(name, cloudKey);
-    if (!baseUrl) return base;
-    const rebind = (s: Sink): Sink =>
-      s instanceof TracerCloudSink ? new TracerCloudSink(s.key, { source: s.source, baseUrl }) : s;
-    if (base instanceof MultiSink) return new MultiSink(base.sinks.map(rebind));
-    return rebind(base);
   }
 
   /** Wrap a (sync or async) function so each call records a span. */

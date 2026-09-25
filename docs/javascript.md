@@ -1,6 +1,6 @@
 # Using TRACER from JavaScript / Node.js
 
-TRACER is a Python package, but it integrates cleanly into any JS/Node.js pipeline through the CLI and the HTTP server. No Python goes into your application code.
+TRACER is a Python package, but it integrates cleanly into any JS/Node.js pipeline through its Python API and a self-hosted HTTP server. No Python goes into your application code.
 
 ---
 
@@ -56,6 +56,7 @@ pip install tracer-llm[embeddings]
 ```
 
 ```python
+import json
 import tracer, numpy as np
 
 texts = [json.loads(l)["input"] for l in open("traces.jsonl")]
@@ -67,21 +68,31 @@ np.save("traces.npy", X)
 
 ### 3. Fit the routing policy
 
-```bash
-tracer fit traces.jsonl --target 0.95
+```python
+# fit_policy.py
+import tracer
+
+tracer.fit(
+    "traces.jsonl",
+    config=tracer.FitConfig(target_teacher_agreement=0.95),
+)
 ```
 
-TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` extension). Run this offline, in a cron job, a GitHub Action, or manually. It does not touch your application.
+TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` extension). Run `python fit_policy.py` offline, in a cron job, a GitHub Action, or manually. It does not touch your application.
 
 ---
 
 ### 4. Start the HTTP server
 
-```bash
-tracer serve .tracer --port 8000
+Save this as `serve_policy.py` and run it with `python serve_policy.py`:
+
+```python
+import tracer
+
+tracer.serve(".tracer", host="127.0.0.1", port=8000)
 ```
 
-Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. It binds to `0.0.0.0:8000` by default.
+Run this as a sidecar next to your Node app, same server, same docker-compose, same machine. This example binds to `127.0.0.1:8000`. For a container sidecar, bind to `0.0.0.0` inside the container and limit network access to your application.
 
 ---
 
@@ -153,16 +164,21 @@ const { labels, decisions, handled } = await res.json()
 
 Every deferred input that reaches your LLM is a new trace. Accumulate them and retrain periodically, coverage grows with each refit.
 
-```bash
-# Run on a schedule (cron, GitHub Action, whatever)
-tracer update new_traces.jsonl
+```python
+# Run this script on a schedule; supply matching embeddings or a sibling .npy.
+import tracer
+
+tracer.update("new_traces.jsonl", embeddings=X_new)
 ```
 
-Then restart `tracer serve` to pick up the updated policy. Coverage typically grows from ~84% at day 1 to 90%+ within a week of production traffic.
+Then restart the `serve_policy.py` process to pick up the updated policy. Coverage typically grows from ~84% at day 1 to 90%+ within a week of production traffic.
 
 ---
 
 ## docker-compose setup
+
+In `serve_policy.py`, use `host="0.0.0.0"` so the Node container can reach the
+server. The example exposes port 8000 only within the Compose network.
 
 ```yaml
 services:
@@ -174,15 +190,16 @@ services:
       TRACER_URL: http://tracer:8000
 
   tracer:
-    image: python:3.11-slim
+    image: python:3.14-slim
     working_dir: /app
     volumes:
-      - ./.tracer:/app/.tracer
+      - ./.tracer:/app/.tracer:ro
+      - ./serve_policy.py:/app/serve_policy.py:ro
     command: >
-      sh -c "pip install tracer-llm -q && tracer serve .tracer --port 8000"
-    ports: ['8000:8000']
+      sh -c "pip install tracer-llm -q && python serve_policy.py"
+    expose: ['8000']
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       retries: 3
 ```
@@ -197,8 +214,8 @@ Your Node app reads `process.env.TRACER_URL` and routes through it. Replace the 
 |------|-------|-----------|
 | Collect traces | Your JS app | Every LLM call |
 | Embed traces | Python script (offline) | Before each fit |
-| Fit policy | `tracer fit` CLI | On a schedule |
-| Serve predictions | `tracer serve` sidecar | Always-on |
+| Fit policy | `tracer.fit()` in a Python script | On a schedule |
+| Serve predictions | `tracer.serve()` in a Python sidecar | Always-on |
 | Embed input at inference | JS (same model/API) | Every prediction |
 | POST to TRACER | Your JS app | Every prediction |
 

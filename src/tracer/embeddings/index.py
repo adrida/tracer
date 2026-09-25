@@ -116,9 +116,10 @@ def embed_texts(
     except RuntimeError as e:
         if "Numpy is not available" in str(e) or "numpy" in str(e).lower():
             raise RuntimeError(
-                "PyTorch cannot convert tensors to NumPy. This usually means "
-                "your NumPy version is too new for your PyTorch version.\n"
-                "Fix with:  pip install 'numpy<2.1'\n"
+                "PyTorch cannot convert tensors to NumPy. Your installed "
+                "PyTorch and NumPy builds may be incompatible.\n"
+                "Install compatible builds for your Python version, for example:\n"
+                "  python -m pip install --upgrade torch 'numpy>=1.26.4,<3'\n"
                 "Then restart your Python process / notebook kernel."
             ) from e
         raise

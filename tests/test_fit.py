@@ -274,15 +274,6 @@ def test_report():
         assert manifest.version == "0.1.0"
 
 
-# ── CLI demo ──────────────────────────────────────────────────────────────────
-
-def test_demo_runs():
-    """The demo CLI command should run without errors."""
-    import argparse
-    from tracer.cli.main import _cmd_demo
-    _cmd_demo(argparse.Namespace())
-
-
 # ── Progress logging & candidate skipping ────────────────────────────────────
 
 def test_search_surrogate_invokes_on_candidate_callback():

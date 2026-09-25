@@ -1,6 +1,7 @@
 """Lightweight prediction server for a fitted TRACER policy.
 
-    tracer serve .tracer --port 8000
+    import tracer
+    tracer.serve(".tracer", port=8000)
 
 Exposes:
     POST /predict   {"embedding": [0.1, 0.2, ...]}  →  {"label", "decision", "accept_score", "stage"}
