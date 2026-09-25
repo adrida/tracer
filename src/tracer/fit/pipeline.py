@@ -233,7 +233,11 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
 
 def _predict(clf, X):
     probs = clf.predict_proba(X)
-    preds = probs.argmax(axis=1).astype(int)
+    idx = probs.argmax(axis=1)
+    # predict_proba columns follow clf.classes_. A stage trained on a subset of
+    # the label space (the RSB residual stage) must map them back to label ids.
+    classes = getattr(clf, "classes_", None)
+    preds = (np.asarray(classes)[idx] if classes is not None else idx).astype(int)
     return preds, probs
 
 
