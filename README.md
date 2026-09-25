@@ -11,7 +11,6 @@
 [![npm](https://img.shields.io/npm/v/@tracer-llm/watch?label=%40tracer-llm%2Fwatch&color=cb3837&logo=npm)](https://www.npmjs.com/package/@tracer-llm/watch)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/adrida/tracer/actions)
-[![Website](https://img.shields.io/badge/website-tracerml.ai-blue)](https://tracerml.ai)
 [![Docs](https://img.shields.io/badge/docs-reference-blue)](docs/)
 
 Most LLM-based classification pipelines use a large language model for every single input. In practice, the vast majority of that traffic is predictable - a lightweight traditional ML model (logistic regression, gradient-boosted trees, or a small neural net) can match the LLM's output with near-perfect agreement.
@@ -20,25 +19,6 @@ TRACER learns the decision boundary between "easy" and "hard" inputs directly fr
 
 ```bash
 pip install tracer-llm
-```
-
-## See it work
-
-```bash
-tracer demo
-```
-
-```
-  TRACER  Demo - Banking77 (77 intents · 1,500 traces)
-
-  Routing Policy
-  method      l2d
-  coverage    91.4%   of traffic handled by surrogate
-  teacher TA  0.920   surrogate matches teacher on handled traffic
-
-  Cost Projection (10k queries/day)
-      Without TRACER   10,000 LLM calls/day   $20.00/day
-      With TRACER         863 LLM calls/day   $ 1.73/day   $6,670 saved/yr
 ```
 
 ## Quickstart
@@ -63,10 +43,11 @@ out = router.predict("What is my balance?")
 # 3. Fallback - only invokes the LLM when the surrogate declines
 out = router.predict("Some edge case", fallback=lambda: call_my_llm(text))
 ```
+The [API reference](docs/api.md) covers fitting, routing, updates, and reports.
+See [concepts](docs/concepts.md) for the pipeline and [watch](docs/watch.md) for
+local trace recording and opt-in exports to your own backend.
 
-> **Want to go deeper?** The [concepts guide](docs/concepts.md) explains the full pipeline, model zoo, and parity gate. The [API reference](docs/api.md) covers every parameter. The [CLI reference](docs/cli.md) covers `tracer fit`, `tracer serve`, and more. For observability see [watch](docs/watch.md), and to drive Tracer Cloud from your shell see the [`tracer cloud` reference](docs/cloud.md).
-
-## Watch your LLM traffic (free observability)
+## Watch your LLM traffic
 
 Before you fit anything, just *watch*. Wrap any LLM call and every request is
 recorded locally as an OpenTelemetry GenAI span, no account, no key, nothing
@@ -82,21 +63,12 @@ def classify(ticket: str) -> str:
     return call_my_llm(ticket)   # traces append to .tracer/watch/*.jsonl
 ```
 
-Want them in a dashboard? Tracer Cloud observability is **free**. Mint a key
-(`tracer cloud ingest-keys create`, or the Watch page in the app) and set one
-env var, your traffic streams in within seconds, prod-safe (batched, never adds
-latency or throws):
-
-```bash
-export TRACER_CLOUD_KEY=trobs_...   # or watch(..., cloud_key="trobs_...")
-```
-
 The same watched spans map 1:1 to `TraceRecord`, so once you have traffic you can
-`tracer fit` a router from it. Full guide: [docs/watch.md](docs/watch.md).
+call `tracer.fit()` to train a router from it. Full guide: [docs/watch.md](docs/watch.md).
 
 ## Using from JavaScript / Node.js
 
-**Watch your JS LLM calls (free observability):** [`@tracer-llm/watch`](https://www.npmjs.com/package/@tracer-llm/watch) mirrors the Python decorator with zero dependencies, recording every call as an OpenTelemetry GenAI span (local by default, or streamed free to Tracer Cloud).
+**Watch your JS LLM calls (free observability):** [`@tracer-llm/watch`](https://www.npmjs.com/package/@tracer-llm/watch) mirrors the Python decorator with zero dependencies, recording every call as an OpenTelemetry GenAI span (local by default, with opt-in export to your own backend).
 
 ```bash
 npm install @tracer-llm/watch
@@ -111,14 +83,14 @@ const w = watch("support_classifier", { system: "provider-x", model: "model-x" }
 const classify = w(async (ticket) => callYourLLM(ticket));
 ```
 
-Full guide: [docs/javascript.md](docs/javascript.md). To route (not just observe) from JS, log traces, fit offline with the CLI, run `tracer serve` as a sidecar, and call it via `fetch`:
+Full guide: [docs/javascript.md](docs/javascript.md). To route (not just observe) from JS, log traces, fit offline with `tracer.fit()`, run `tracer.serve()` in a Python sidecar, and call it via `fetch`:
 
 ```js
 // 1. Log every LLM classification
 fs.appendFileSync('traces.jsonl', JSON.stringify({ input: text, teacher: label }) + '\n')
 
 // 2. At inference: embed → POST to TRACER → fallback to LLM only if deferred
-const { label, decision } = await fetch('http://localhost:8000/predict', {
+let { label, decision } = await fetch('http://localhost:8000/predict', {
   method: 'POST',
   body: JSON.stringify({ embedding }),  // same model you used at fit time
 }).then(r => r.json())
@@ -139,7 +111,7 @@ User query → [Embedder] → [ML Surrogate] → [Acceptor Gate]
                                           (traditional ML)
 ```
 
-The surrogate is **not another LLM** - it is a classical ML or shallow DL model. By default the zoo is lightweight and fast (logistic regression, SGD, and small feed-forward nets); the tree-based models (decision tree, random forest, extra-trees, gradient boosting) are heavier and opt-in with `tracer fit --trees`. This is what makes the cost reduction real: inference is CPU-bound, sub-millisecond, and free.
+The surrogate is **not another LLM** - it is a classical ML or shallow DL model. The Python API searches linear, neural, and tree-based candidates. For a lighter sweep, pass `FitConfig(skip_candidates=("dt", "rf", "et", "gbt", "xgb"))` to exclude tree models. Inference runs locally on your CPU.
 
 1. **Fit** - train a suite of candidate surrogates on your LLM's classification traces; select the best via cross-validated teacher agreement
 2. **Gate** - attach a learned acceptor that estimates, per-input, whether the surrogate will agree with the teacher
@@ -155,7 +127,7 @@ The surrogate is **not another LLM** - it is a classical ML or shallow DL model.
 | End-to-end accuracy | 96.4% |
 | **Annual savings** (10k queries/day) | **$302,850** |
 
-_Banking77 is a 77-class task; the tree models help here, so these numbers are with `tracer fit --trees`. The lightweight default (linear + MLP) is faster and enough for most tasks._
+_Banking77 is a 77-class task; these results include tree-based candidates. Candidate selection and coverage depend on your data._
 
 ## Continual learning flywheel
 
@@ -194,19 +166,23 @@ pip install tracer-llm[embeddings]   # adds sentence-transformers
 X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
 ```
 
-## CLI
+## Inspect traffic before fitting
 
-| Command | What it does |
-|---------|-------------|
-| `tracer demo` | Zero-setup demo on real data |
-| `tracer scan traces.jsonl --html scan.html` | Day-one read: how much traffic is certifiably routable, with a 3D map |
-| `tracer fit traces.jsonl --target 0.95` | Fit a routing policy |
-| `tracer update new_traces.jsonl` | Refit with new traces |
-| `tracer report-html` | Open the HTML report |
-| `tracer serve .tracer --port 8000` | HTTP prediction server |
-| `tracer cloud login` | Drive Tracer Cloud from the terminal: create, train, route, test, and watch tracers, at parity with the dashboard ([docs](docs/cloud.md)) |
+`tracer.scan()` groups traces by similarity and estimates the certifiable share
+using held-out bounds. Pass the embeddings that correspond to your trace rows:
 
-`tracer scan` is the fast, conservative first look (similarity grouping plus exact held-out bounds, no training). It needs about 1,000 traces and works best around 5,000; below 1,000 it asks you to collect more, or pass `--force` for a best-effort floor. Embeddings are computed locally by default (sentence-transformers), or point it at your own embedding service with `--embed-url`. `tracer fit` then trains the real router and certifies more of the same traffic. The HTML report includes an interactive 3D map of your embedding space with a verdict/label colour toggle. See the [CLI reference](docs/cli.md) for every flag.
+```python
+from pathlib import Path
+import tracer
+from tracer.scanner import scan_html
+
+scan = tracer.scan("traces.jsonl", embeddings=X, target=0.95)
+Path("scan.html").write_text(scan_html(scan), encoding="utf-8")
+```
+
+A scan needs at least 1,000 traces; around 5,000 is recommended. Use `force=True`
+only for an explicitly marked thin-data estimate. It does not train a router;
+use `tracer.fit()` for training. See the [scan guide](docs/scan.md).
 
 ## What's in `.tracer/`
 
@@ -232,7 +208,8 @@ pip install tracer-llm[all]           # everything
 |---|---|
 | [Concepts](docs/concepts.md) | Pipeline internals, model zoo, parity gate |
 | [API reference](docs/api.md) | Every function, parameter, and return type |
-| [CLI reference](docs/cli.md) | `tracer fit`, `tracer serve`, `tracer demo`, and more |
+| [Scan](docs/scan.md) | Inspect traffic before training |
+| [Watch](docs/watch.md) | Record calls locally and configure generic exports |
 | [JavaScript / Node.js](docs/javascript.md) | Full integration guide for JS pipelines |
 | [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
 | [Troubleshooting](docs/troubleshooting.md) | `selected_method=null`, coverage drift, embedding-dim mismatch |
@@ -262,7 +239,7 @@ Adam Rida, arXiv 2026
 
 Adam Rida, Tracer AI, Inc., August 25, 2026
 
-[PDF in this repository](research/pricing-capability.pdf) | [Research article](https://tracerml.ai/research/pricing-capability/) | [Canonical PDF](https://tracerml.ai/research/pricing-capability/pricing-capability-paper.pdf)
+[PDF in this repository](research/pricing-capability.pdf)
 
 This repository preserves the 21-page final submission dated August 25, 2026. The paper defines Capability Alpha under controlled evaluation, develops Price-Implied Uplift, studies Spirit Aviation's selected data-and-software bid, and compares four public AI data and content agreements. The public PDF preserves the final submission's text, bookmarks, citations, and internal navigation, corrects one internal section reference, and adds descriptive document metadata. It is independent research without a peer review or journal acceptance claim.
 

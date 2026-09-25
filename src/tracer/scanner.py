@@ -1,4 +1,4 @@
-"""tracer scan: the day-one verdict on a traces file.
+"""tracer.scan(): the day-one verdict on a traces file.
 
 Answers three questions in one pass:
   1. How much of this traffic is predictable enough for a near-free model?
@@ -14,9 +14,11 @@ per-cluster exact confidence bounds. It does not train a router; `fit`
 does that, learning a router with accept gates on the same traffic.
 
 Usage:
-    tracer scan traces.jsonl
-    tracer scan traces.jsonl --target 0.95 --teacher-price-per-1k 5.0 \
-        --monthly-calls 3000000 --html scan_report.html
+    import tracer
+    from tracer.scanner import scan_html
+    result = tracer.scan("traces.jsonl", embeddings=X, target=0.95)
+    report = scan_html(result)
+
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ _INPUT_KEYS = ("input", "query", "text", "prompt", "question")
 _LABEL_KEYS = ("teacher", "teacher_output", "label", "intent", "output", "answer")
 
 # Data-volume policy. Below MIN the held-out evidence is too thin for the
-# bounds to mean anything, so a plain scan refuses and points at --force.
+# bounds to mean anything, so a plain scan refuses and points at force=True.
 # SUGGESTED is the volume where cells reliably carry enough held-out members
 # to certify at 0.90 without coarsening.
 MIN_SCAN_TRACES = 1_000
@@ -177,7 +179,7 @@ def scan(
         raise ThinDataError(
             f"scan needs at least {MIN_SCAN_TRACES:,} traces for a stable read "
             f"(we suggest ~{SUGGESTED_SCAN_TRACES:,}); this file has {n:,}. "
-            f"Collect more, or pass --force to scan anyway on thin data "
+            f"Collect more, or pass force=True to scan anyway on thin data "
             f"(results will be a best-effort floor, not a guarantee)."
         )
 
@@ -351,76 +353,62 @@ def scan(
 
 
 def format_scan(r: ScanResult) -> str:
-    """Coloured terminal rendering, matching the rest of the tracer CLI.
-
-    Colours degrade to plain text automatically off a TTY (see cli._ui._C).
-    """
-    try:
-        from tracer.cli._ui import _C, hr
-        c = _C()
-        rule = hr
-    except Exception:                       # pragma: no cover - cli always present
-        class _Plain:
-            def __getattr__(self, _): return ""
-        c = _Plain()
-        def rule(char="-", width=56): return char * width
+    """Format a scan as plain text for logs and notebooks."""
+    def rule(char="-", width=56):
+        return char * width
 
     L: list[str] = []
     pct = r.certifiable_share * 100
-    head_c = c.GREEN if r.certifiable_share > 0 else c.DIM
 
     L.append("")
-    L.append(f"  {c.BOLD}{head_c}{pct:.1f}%{c.RESET}{c.BOLD} of traffic certifiable for a near-free model{c.RESET}")
-    L.append(f"  {c.DIM}{r.n_traces:,} traces  ·  {r.n_classes} labels  ·  {r.n_clusters} cells  ·  target {r.target:.0%} agreement{c.RESET}")
+    L.append(f"  {pct:.1f}% of traffic certifiable for a near-free model")
+    L.append(f"  {r.n_traces:,} traces  ·  {r.n_classes} labels  ·  {r.n_clusters} cells  ·  target {r.target:.0%} agreement")
     L.append(f"  {rule()}")
 
     if r.forced:
-        L.append(f"  {c.YELLOW}{c.BOLD}⚠  forced scan{c.RESET}  {c.YELLOW}thin data: clustering coarsened to concentrate held-out evidence.{c.RESET}")
-        L.append(f"     {c.DIM}Bounds are a best-effort floor, not a guarantee. Collect more traces or run `tracer fit` for the real number.{c.RESET}")
+        L.append(f"  ⚠  forced scan  thin data: clustering coarsened to concentrate held-out evidence.")
+        L.append(f"     Bounds are a best-effort floor, not a guarantee. Collect more traces or run `tracer.fit()` for the real number.")
 
     if r.certifiable_share > 0:
-        L.append(f"  {c.DIM}{'worst certified bound':<22}{c.RESET}{c.BOLD}{c.GREEN}{r.certified_floor:.3f}{c.RESET}  {c.DIM}exact, held-out{c.RESET}")
+        L.append(f"  {'worst certified bound':<22}{r.certified_floor:.3f}  exact, held-out")
     if r.savings_per_1k_calls is not None:
-        L.append(f"  {c.DIM}{'savings / 1k calls':<22}{c.RESET}{c.BOLD}${r.savings_per_1k_calls:.2f}{c.RESET}  {c.DIM}at ${r.teacher_price_per_1k}/1k teacher{c.RESET}")
+        L.append(f"  {'savings / 1k calls':<22}${r.savings_per_1k_calls:.2f}  at ${r.teacher_price_per_1k}/1k teacher")
     if r.monthly_savings is not None:
-        L.append(f"  {c.DIM}{'monthly savings':<22}{c.RESET}{c.BOLD}{c.GREEN}${r.monthly_savings:,.0f}{c.RESET}  {c.DIM}at {r.monthly_calls:,} calls/mo{c.RESET}")
+        L.append(f"  {'monthly savings':<22}${r.monthly_savings:,.0f}  at {r.monthly_calls:,} calls/mo")
 
     if r.traces_needed_estimate:
         L.append("")
-        L.append(f"  {c.YELLOW}⚠{c.RESET}  Not enough held-out evidence yet. Collect roughly "
-                 f"{c.BOLD}{r.traces_needed_estimate:,} more traces{c.RESET} and rescan,")
-        L.append(f"     {c.DIM}or pass --force to certify on what you have. Exact bounds need ~22 held-out examples per cell.{c.RESET}")
+        L.append(f"  ⚠  Not enough held-out evidence yet. Collect roughly "
+                 f"{r.traces_needed_estimate:,} more traces and rescan,")
+        L.append(f"     or pass force=True to certify on what you have. Exact bounds need ~22 held-out examples per cell.")
 
     if r.frontier:
         L.append("")
-        L.append(f"  {c.BOLD}{c.YELLOW}Certifiable share by target{c.RESET}  {c.DIM}(lightweight scan estimate){c.RESET}")
+        L.append(f"  Certifiable share by target  (lightweight scan estimate)")
         L.append(f"  {rule('·')}")
         for tgt in sorted(r.frontier):
             share = r.frontier[tgt]
-            sc = c.GREEN if share >= 0.30 else (c.YELLOW if share > 0 else c.DIM)
-            L.append(f"  {c.DIM}target {tgt:.0%}{c.RESET}   {c.BOLD}{sc}{share*100:5.1f}%{c.RESET}")
+            L.append(f"  target {tgt:.0%}   {share*100:5.1f}%")
 
     L.append("")
-    L.append(f"  {c.BOLD}{c.YELLOW}Cells{c.RESET}  {c.DIM}(top {min(20, len(r.clusters))} by traffic share){c.RESET}")
+    L.append(f"  Cells  (top {min(20, len(r.clusters))} by traffic share)")
     L.append(f"  {rule('·')}")
-    L.append(f"  {c.DIM}{'share':>6} {'held':>5} {'bound':>6}  verdict   dominant label{c.RESET}")
+    L.append(f"  {'share':>6} {'held':>5} {'bound':>6}  verdict   dominant label")
     for cl in r.clusters[:20]:
         if cl.certifiable:
-            tag = f"{c.GREEN}✔ free {c.RESET}"
-            bcol = c.GREEN
+            tag = f"✔ free "
         else:
-            tag = f"{c.RED}→ keep {c.RESET}"
-            bcol = c.DIM
-        L.append(f"  {cl.share*100:>5.1f}% {cl.n_held:>5} {bcol}{cl.cp_lower:>6.3f}{c.RESET}  {tag}  {c.BOLD}{cl.dominant_label[:38]}{c.RESET}")
+            tag = f"→ keep "
+        L.append(f"  {cl.share*100:>5.1f}% {cl.n_held:>5} {cl.cp_lower:>6.3f}  {tag}  {cl.dominant_label[:38]}")
         if cl.examples:
             ex = " ".join(cl.examples[0].split())[:68]
-            L.append(f"  {c.DIM}{'':>19}e.g. “{ex}”{c.RESET}")
+            L.append(f"  {'':>19}e.g. “{ex}”")
     if len(r.clusters) > 20:
-        L.append(f"  {c.DIM}... {len(r.clusters) - 20} more cells{c.RESET}")
+        L.append(f"  ... {len(r.clusters) - 20} more cells")
 
     L.append("")
-    L.append(f"  {c.DIM}Certifiable = an exact binomial lower bound on held-out label agreement clears your target. No in-sample numbers.{c.RESET}")
-    L.append(f"  {c.DIM}Next: {c.RESET}{c.CYAN}tracer fit{c.RESET}{c.DIM} trains a real router with accept gates and certifies more on the same traffic.{c.RESET}")
+    L.append(f"  Certifiable = an exact binomial lower bound on held-out label agreement clears your target. No in-sample numbers.")
+    L.append(f"  Next: tracer.fit() trains a real router with accept gates and certifies more on the same traffic.")
     L.append("")
     return "\n".join(L)
 
@@ -693,7 +681,7 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
         thin = ("<div class='note warn'><b>Forced scan on limited data.</b> The grouping was "
                 "coarsened to squeeze the most evidence out of a small sample, so every number "
                 "below is a best-effort floor, not a guarantee. Collect more requests, or run "
-                "<code>tracer fit</code>, for a number you can quote.</div>")
+                "<code>tracer.fit()</code>, for a number you can quote.</div>")
 
     has_viz = bool(r.projection and r.projection.get("points"))
     viz_block = _VIZ_HTML if has_viz else ""
@@ -707,11 +695,11 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
 <style>{_SCAN_CSS}</style></head>
 <body>
- <a class="logo" href="https://tracerml.ai" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>Tracer scan <span class="src">&middot; {_esc(source_name)}</span></a>
+ <a class="logo" href="https://github.com/adrida/tracer" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>Tracer scan <span class="src">&middot; {_esc(source_name)}</span></a>
  <h1><span class="u">{pct:.0f}%</span> of your traffic can be answered for free</h1>
  <p class="sub">A near-free model already matches your current model on {pct:.0f}% of requests, proven on held-out examples, not guessed.</p>
  <p class="meta">{r.n_traces:,} requests &middot; {r.n_clusters} groups of similar questions &middot; target {r.target:.0%} agreement</p>
- <a href="#run-fit" class="top-cta">Train the real router with <code>tracer fit</code> &rarr;</a>
+ <a href="#run-fit" class="top-cta">Train the real router with <code>tracer.fit()</code> &rarr;</a>
  {save_html}
  {thin}
  <div class="note"><b>How to read this.</b> We grouped your requests into clusters of similar questions and laid them out in the space below. For each cluster we checked, on examples it never saw, how often a tiny free model agrees with your model. <b style="color:#16a34a">Green</b> means it agrees at least {r.target:.0%} of the time, so it is safe to auto-answer for free. <b style="color:#dc2626">Red</b> means we could not prove that yet, so those stay on your model.</div>
@@ -722,11 +710,11 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
  </table>
  <div class="scan-cta" id="run-fit">
    <h3>This is a fast, conservative estimate. Train the real router for more.</h3>
-   <p>This 2-minute scan groups your traffic by similarity, a deliberately conservative read, so the real number is usually higher. <code>tracer fit</code> trains the actual router with accept gates and certifies a larger share of the same traffic.</p>
-   <p><code>pip install tracer-llm</code> &nbsp;then&nbsp; <code>tracer fit your_traces.jsonl</code></p>
+   <p>This 2-minute scan groups your traffic by similarity, a deliberately conservative read, so the real number is usually higher. <code>tracer.fit()</code> trains the actual router with accept gates and certifies a larger share of the same traffic.</p>
+   <p><code>pip install tracer-llm</code> &nbsp;then&nbsp; <code>tracer.fit(&quot;your_traces.jsonl&quot;, embeddings=X)</code></p>
  </div>
  <footer>Every number here is an exact lower bound measured on held-out data the grouping never saw, no in-sample optimism.
-   <span class="foot-brand"><a href="https://tracerml.ai" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>tracerml.ai</a></span></footer>
+   <span class="foot-brand"><a href="https://github.com/adrida/tracer" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>TRACER on GitHub</a></span></footer>
  <div id="texttip" class="texttip"></div>
  {script}
  {_TEXTTIP_SCRIPT}

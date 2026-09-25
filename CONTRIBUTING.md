@@ -68,13 +68,20 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Tests use synthetic data and run in temporary directories. No external
-dependencies or API keys required.
+Tests use synthetic data and run in temporary directories. No model downloads
+or API keys are required. To check the JavaScript recorder:
+
+```bash
+cd js
+npm ci
+npm test -- --maxWorkers=1 --minWorkers=1
+npm run build
+```
 
 ## Quick sanity check
 
 ```bash
-tracer demo
+pytest tests/test_router.py tests/test_watch.py -q
 ```
 
 ## Project structure
@@ -101,9 +108,8 @@ src/tracer/
   runtime/
     router.py            <- production Router class
     serve.py             <- lightweight HTTP prediction server (stdlib only)
-  cli/
-    main.py              <- tracer CLI entry point (fit, report, update, demo, serve)
-    _ui.py               <- terminal formatting and progress display
+  scanner.py             <- pre-training traffic diagnostics and reports
+  watch.py               <- local trace recording and generic export sinks
 ```
 
 ## Adding a new surrogate model

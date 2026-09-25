@@ -20,7 +20,7 @@ Preferred: use GitHub's private vulnerability reporting via the
 [**Security → Report a vulnerability**](https://github.com/adrida/tracer/security/advisories/new)
 tab on this repository.
 
-Alternatively, email **adam@tracerml.ai** with:
+Include:
 
 - a description of the issue and the potential impact,
 - steps to reproduce or a proof of concept,

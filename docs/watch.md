@@ -54,42 +54,13 @@ Each span follows the OpenTelemetry GenAI conventions (`gen_ai.*`):
 and output text from common provider response objects (object- or dict-shaped);
 it never raises, so it is safe on the hot path.
 
-## Stream to Tracer Cloud (free)
-
-Tracer Cloud observability is free. Get a workspace ingest key and point the
-watcher at it, your traffic appears in the dashboard within seconds.
-
-Mint a key:
-
-```bash
-tracer cloud login            # one-time, opens your browser
-tracer cloud ingest-keys create --name "my app"   # prints a trobs_... key
-```
-
-Turn it on with **one env var** (no code change):
-
-```bash
-export TRACER_CLOUD_KEY=trobs_...
-```
-
-…or per-watcher:
-
-```python
-watch = tracer.watch("support_classifier", cloud_key="trobs_...")
-```
-
-It's **prod-safe**: spans are batched on a background thread, so a slow or down
-endpoint never adds latency to (or throws inside) your function. Set
-`TRACER_WATCH_DEBUG=1` to surface export errors.
-
 ## Sinks
 
 | Sink | What it does | Turn on with |
 |------|--------------|--------------|
 | `LocalFileSink` | JSONL to `.tracer/watch/` (default) | always on |
-| `TracerCloudSink` | stream to Tracer Cloud (free) | `cloud_key=` / `TRACER_CLOUD_KEY` |
 | `OTLPSink` | fan out to any OTLP/HTTP backend | `TRACER_WATCH_OTLP_ENDPOINT` [+ `_HEADERS`] |
-| `MultiSink` | several at once (local + cloud + OTLP) | set more than one of the above |
+| `MultiSink` | several at once (local + your own backend) | set more than one of the above |
 
 Pass a custom `sink=` to `watch()` to fully control export.
 
@@ -97,8 +68,6 @@ Pass a custom `sink=` to `watch()` to fully control export.
 
 | Var | Effect |
 |-----|--------|
-| `TRACER_CLOUD_KEY` | stream watched spans to Tracer Cloud (free) |
-| `TRACER_CLOUD_URL` | override the Cloud base URL (default `https://app.tracerml.ai`) |
 | `TRACER_WATCH_DIR` | local JSONL directory (default `.tracer/watch`) |
 | `TRACER_WATCH_OTLP_ENDPOINT` | also POST spans to this OTLP/HTTP endpoint |
 | `TRACER_WATCH_OTLP_HEADERS` | comma-separated `k=v` headers for the OTLP endpoint |
@@ -107,12 +76,12 @@ Pass a custom `sink=` to `watch()` to fully control export.
 ## JavaScript / TypeScript
 
 The same watcher ships for JS/TS as `@tracer-llm/watch` (zero dependencies, same
-capture, same free Tracer Cloud streaming):
+capture, local files and opt-in generic export):
 
 ```ts
 import { watch } from "@tracer-llm/watch";
 
-const w = watch("support-router");                 // local by default; cloud with one key
+const w = watch("support-router");                 // local by default
 
 // wrap a function
 const classify = w(async (ticket: string) =>
@@ -132,11 +101,28 @@ await w.span({ input, userId: "u_42" }, async (s) => {
 });
 ```
 
-Set `TRACER_CLOUD_KEY` (or `watch(name, { cloudKey })`) to stream to Tracer
-Cloud. See the `@tracer-llm/watch` package README for details.
+See the [`@tracer-llm/watch` package README](../js/README.md) for details.
 
 ## From watched traffic to a router
 
-Watched spans map 1:1 to `tracer.types.TraceRecord`, so once you've collected
-real traffic you can fit a routing policy straight from it, or let Tracer Cloud
-auto-optimize one for you. See the [concepts guide](concepts.md).
+Convert saved spans to the fitting schema before passing them to `tracer.fit()`:
+
+```python
+import json
+from pathlib import Path
+from tracer.watch import GenAISpan
+
+source = Path(".tracer/watch/support_classifier.jsonl")
+with Path("traces.jsonl").open("w", encoding="utf-8") as output:
+    for line in source.read_text(encoding="utf-8").splitlines():
+        span = GenAISpan(**json.loads(line))
+        record = span.to_trace_record()
+        output.write(json.dumps({
+            "input": record.input_text,
+            "teacher": record.teacher_label,
+        }) + "\n")
+```
+
+Use calls whose outputs are classification labels, then compute embeddings for
+the same rows and call `tracer.fit("traces.jsonl", embeddings=X)`. See the
+[concepts guide](concepts.md).

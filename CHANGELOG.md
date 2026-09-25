@@ -3,6 +3,18 @@
 All notable changes to TRACER are recorded here. This project follows semantic
 versioning.
 
+## Unreleased
+
+### Removed (breaking)
+- The `tracer` command-line executable and command implementations. Use the
+  Python APIs for fitting, scanning, updating, reports, and serving predictions.
+- The Tracer app client, authentication, and automatic app telemetry exporters
+  in both Python and JavaScript. Existing app credentials no longer trigger
+  uploads. Local recording, custom sinks, and explicitly configured generic
+  HTTP exports remain available.
+- App connection instructions and command-line documentation. All current
+  examples use the library APIs.
+
 ## 0.3.3 (2026-06)
 
 ### Fixed
@@ -20,48 +32,27 @@ versioning.
   `ValueError` messages. Previously the count excluded blank lines, so
   the reported line was lower than the actual position of the bad record.
 
-## 0.3.1 (2026-06)
-
-### Changed
-- `tracer cloud` commands that take a tracer (`get`, `training`, `analytics`,
-  `label-space`, `traces`, ...) now accept either the tracer slug or its id.
-- `tracer cloud scan` works without logging in, matching the public web scan.
-
-### Fixed
-- `tracer cloud keys create` and `tracer cloud ingest-keys create` now honor
-  `--json` and emit the created record (including the one-time secret) as JSON.
-
 ## 0.3.0 (2026-06)
 
 ### Added
-- `tracer.watch`: a decorator (and HTTP fallback) that observes the LLM calls
-  your pipeline already makes and ships them, free, to Tracer Cloud, where they
-  accumulate and auto-optimize once there are enough. Captures the full request
-  and response on the OpenTelemetry GenAI (`gen_ai.*`) schema, with pluggable
-  sinks (local file, Tracer Cloud, OTLP, or several at once).
+- `tracer.watch`: a decorator that records LLM calls on the OpenTelemetry
+  GenAI (`gen_ai.*`) schema, with pluggable local and generic export sinks.
 - `@tracer-llm/watch`: a zero-dependency JavaScript/TypeScript mirror of the watch
   decorator (async-context aware), so JS pipelines get the same one-line
   observability as Python.
-- `tracer cloud`: a full command-line interface for Tracer Cloud, at parity with
-  the dashboard. Browser or password login, then manage tracers (create, quick
-  and bulk uploads, agentic `onboard`, rename, delete), training (retrain,
-  auto-retrain, promote/rollback, live status), routing (`route`), test
-  batteries, the model library, API keys, observability ingest keys, billing,
-  analytics, trace selection (`traces`), and a public `scan`.
 - Lazy package initialization so `import tracer` stays fast and only pulls in the
   heavy pieces when you actually use them.
 
 ### Changed
-- `tracer scan` is more robust on messy uploads: tolerant input/label aliasing
-  and a clarification path so ambiguous files still produce a result.
+- Trace ingestion accepts additional input and label aliases.
 
 ### Docs
-- New guides for the watch decorator and the `tracer cloud` CLI.
+- New guide for the watch decorator.
 
 ## 0.2.0 (2026-06)
 
 ### Added
-- `tracer scan`: a fast, conservative day-one read of a traces file, before any
+- `tracer.scan()`: a fast, conservative day-one read of a traces file, before any
   training. It groups traffic by similarity and measures, on a held-out slice it
   never saw, how much a near-free model can answer at your target agreement,
   using exact Clopper-Pearson bounds, with an optional per-1k and monthly savings
@@ -72,14 +63,13 @@ versioning.
   far from the training distribution (kNN distance, global and per-predicted-label
   thresholds) regardless of surrogate confidence, so off-distribution traffic goes
   to the teacher instead of getting a confident guess.
-- `tracer fit --trees` to opt in the tree surrogates, and `--skip` to drop named
-  candidates from the zoo.
+- `FitConfig.skip_candidates` to drop named candidates from the zoo, including
+  tree surrogates when a lighter sweep is desired.
 - Trace loaders accept common key aliases for both input and label
   (`input/query/text/prompt/question` and
   `teacher/teacher_output/label/intent/output/answer`).
-- Bring-your-own embeddings for `tracer scan`: local sentence-transformers by
-  default (`--embed-model`), a precomputed `.npy` (`--embeddings`), or your own
-  HTTP embedding endpoint (`--embed-url`, with header and response-key options).
+- Bring-your-own embeddings for `tracer.scan()`: pass a precomputed array with
+  `embeddings=`, or select a local sentence-transformers model with `model=`.
 
 ### Changed
 - The parity gate now certifies on an exact held-out lower bound instead of an
@@ -87,9 +77,6 @@ versioning.
   and then break the contract on real traffic. Coverage is now monotonic in the
   target, and a hybrid select-then-verify procedure recovers coverage at strict
   targets that a plain held-out split discarded.
-- Tree surrogates (decision tree, random forest, extra-trees, gradient boosting)
-  are now off by default in `tracer fit`; the default zoo is the fast linear and
-  MLP heads. Use `--trees` for hard, high-class-count tasks.
 - The HTML report is restyled to the light Tracer theme, and the word "audit" is
   dropped across the report and docs.
 

@@ -8,7 +8,7 @@ Three snags people hit most often, what causes them, and how to fix each.
 the `FitResult` notes say "No deployable pipeline met the target teacher-parity
 threshold", and `tracer.load_router(...)` then raises `FileNotFoundError` on
 `pipeline.joblib` (the file is only written when a policy actually deploys).
-`tracer serve` reports `method=none` on `/health`.
+The server started with `tracer.serve()` reports `method=none` on `/health`.
 
 **Why.** TRACER only deploys a surrogate that can hold your parity bar. If no
 candidate reaches `target_teacher_agreement` while still covering at least

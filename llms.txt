@@ -24,7 +24,8 @@ Embedder.from_callable(fn)
 - AGENTS.md - full integration guide for AI agents
 - README.md - user-facing docs
 - docs/api.md - Python API reference
-- docs/cli.md - CLI reference
+- docs/scan.md - pre-training diagnostics
+- docs/watch.md - local trace recording and generic exports
 - docs/concepts.md - how it works
 - docs/artifacts.md - .tracer/ directory schema
 - docs/troubleshooting.md - common errors and fixes
@@ -35,7 +36,6 @@ https://arxiv.org/abs/2604.14531
 
 Pricing Capability research paper:
 https://github.com/adrida/tracer/blob/main/research/pricing-capability.pdf
-https://tracerml.ai/research/pricing-capability/
 Current final submission: 21 pages, dated August 25, 2026.
 Defines Capability Alpha under controlled evaluation, develops Price-Implied Uplift,
 and places the Spirit case beside a public transaction panel.

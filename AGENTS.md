@@ -154,8 +154,8 @@ router = tracer.load_router(".tracer", embedder=my_embedder)
 ```
 
 ### Pattern 4: HTTP server (zero deps)
-```bash
-tracer serve .tracer --port 8000
+```python
+tracer.serve(".tracer", port=8000)
 # POST /predict {"embedding": [...]} → {"label", "decision", "accept_score"}
 ```
 
@@ -173,7 +173,7 @@ tracer serve .tracer --port 8000
 ## Things you CAN do autonomously
 
 - Install `tracer-llm` (it's lightweight, MIT licensed)
-- Run `tracer demo` to show the user what it does
+- Follow `notebooks/01-quickstart.ipynb` for a worked example
 - Write traces to JSONL from any data source
 - Fit a policy if traces + embeddings are available
 - Generate the HTML report
@@ -195,7 +195,6 @@ tracer serve .tracer --port 8000
 | `Embedder.from_endpoint(url)` | External embedding API | Needs URL + auth from human |
 | `tracer.generate_html_report(dir)` | Visual audit | No |
 | `tracer.serve(dir, port=8000)` | HTTP server | No |
-| `tracer demo` | Interactive demo | No |
 
 ---
 

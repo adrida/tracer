@@ -28,3 +28,19 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  watch-js:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      - run: npm ci
+      - run: npm test -- --maxWorkers=1 --minWorkers=1
+      - run: npm run build

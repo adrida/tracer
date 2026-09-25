@@ -478,6 +478,8 @@ class FitConfig:
     min_deploy_coverage: float = 0.05
     max_fit_labels: int = 8_000
     seed: int = 42
+    verbose: bool = True
+    skip_candidates: tuple = ()
 ```
 
 | Field | Description |
@@ -487,6 +489,8 @@ class FitConfig:
 | `min_deploy_coverage` | Minimum coverage fraction to consider a method deployable. |
 | `max_fit_labels` | Subsample to this size for efficiency on large datasets (stratified). |
 | `seed` | Random seed for reproducibility. |
+| `verbose` | Emit fitting progress to stderr. Set `False` for quiet runs. |
+| `skip_candidates` | Candidate names to exclude. Use `("dt", "rf", "et", "gbt", "xgb")` for a linear/neural sweep. An empty tuple keeps all available candidates. |
 
 **Example:**
 

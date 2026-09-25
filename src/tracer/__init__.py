@@ -15,8 +15,8 @@ from tracer.watch import GenAISpan, Watcher, watch  # noqa: E402
 
 # Lazy public API (PEP 562). The heavy ML stack (numpy / scikit-learn /
 # hdbscan / sentence-transformers) is only imported on first attribute access,
-# so `import tracer` -- and lightweight entry points like `tracer cloud` --
-# start instantly instead of paying multi-second import cost up front.
+# so `import tracer` and local trace recording start instantly instead of
+# paying multi-second import cost up front.
 #
 # `fit` also collides with the tracer.fit subpackage, so it cannot be healed by
 # __getattr__ alone (the submodule attribute shadows it). tracer.api re-asserts

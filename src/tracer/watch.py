@@ -11,16 +11,13 @@ Design (SOTA / standards-native):
     proprietary schema.
   * The same span maps 1:1 to :class:`tracer.types.TraceRecord`, so watched
     traffic feeds ``tracer.fit()`` / ``tracer.scan()`` directly -- one object
-    end to end (the local recorder and the cloud optimizer consume the same
-    thing).
+    end to end.
   * Exporters are pluggable. ``LocalFileSink`` (default, no key) writes JSONL.
-    ``TracerCloudSink`` streams the same spans to Tracer Cloud's FREE
-    observability with one key (``cloud_key=...`` or ``TRACER_CLOUD_KEY``).
     ``OTLPSink`` fans the SAME spans out over OTLP to anything else that speaks
     it (any OTLP/HTTP backend), zero code change.
 
-Core has zero dependencies (stdlib only) -- local recording AND Tracer Cloud
-streaming both work out of the box with nothing extra to install.
+Core has zero dependencies (stdlib only). Local recording works out of the box;
+network export requires an explicitly configured endpoint or custom sink.
 """
 from __future__ import annotations
 
@@ -41,7 +38,6 @@ __all__ = [
     "Sink",
     "LocalFileSink",
     "OTLPSink",
-    "TracerCloudSink",
     "MultiSink",
     "Watcher",
     "watch",
@@ -256,7 +252,7 @@ class OTLPSink:
 
 
 class MultiSink:
-    """Fan-out to several sinks (e.g. local + cloud + your own OTLP backend)."""
+    """Fan-out to several sinks (e.g. local + your own OTLP backend)."""
 
     def __init__(self, sinks: Sequence[Sink]) -> None:
         self.sinks = list(sinks)
@@ -360,134 +356,8 @@ def extract_response(span: GenAISpan, resp: Any) -> bool:
         return False
 
 
-# Default Tracer Cloud endpoint. Override with TRACER_CLOUD_URL.
-_DEFAULT_CLOUD_URL = "https://app.tracerml.ai"
-
-
-class TracerCloudSink:
-    """Stream observed spans to Tracer Cloud (free observability).
-
-    Point it at a Tracer Cloud ingest key and your watched traffic shows up in
-    the dashboard within seconds. No login, no SDK -- just a key:
-
-        watch = tracer.watch("classifier", cloud_key="trobs_...")
-        # or, zero code change:  export TRACER_CLOUD_KEY=trobs_...
-
-    Routes by key type, matching the two product paths:
-      * ``trobs_*`` (workspace ingest key) -> ``/v1/observe`` (tenant-wide)
-      * ``trc_*``   (per-tracer gateway)   -> ``/v1/ingest``  (bound to a tracer)
-
-    Prod-safe: sends are batched on a background daemon thread, so a slow or
-    down endpoint never adds latency to (or crashes) the host function. Drops
-    silently on overflow / error; set TRACER_WATCH_DEBUG=1 to see why.
-    """
-
-    def __init__(
-        self,
-        key: str,
-        base_url: Optional[str] = None,
-        *,
-        source: str = "watch",
-        batch_size: int = 25,
-        flush_interval: float = 2.0,
-        timeout: float = 10.0,
-        max_queue: int = 10000,
-    ) -> None:
-        import queue as _queue
-
-        self.key = key
-        self.base_url = (base_url or os.environ.get("TRACER_CLOUD_URL") or _DEFAULT_CLOUD_URL).rstrip("/")
-        # trobs_ = workspace ingest key -> /v1/observe; otherwise per-tracer -> /v1/ingest
-        self._observe = key.startswith("trobs_")
-        self.path = "/v1/observe" if self._observe else "/v1/ingest"
-        self.source = source
-        self.batch_size = batch_size
-        self.flush_interval = flush_interval
-        self.timeout = timeout
-        self._q: "Any" = _queue.Queue(maxsize=max_queue)
-        self._stop = threading.Event()
-        self._t = threading.Thread(target=self._run, name="tracer-cloud-sink", daemon=True)
-        self._t.start()
-
-    def _event(self, span: GenAISpan) -> Dict[str, Any]:
-        if self._observe:
-            return {
-                "ts": span.start_time or None,
-                "system": span.system,
-                "model": span.response_model or span.request_model,
-                "input": span.input_text,
-                "output": span.output_text,
-                "prompt_tokens": span.input_tokens,
-                "completion_tokens": span.output_tokens,
-                "latency_ms": span.latency_ms,
-                "cost_usd": span.cost_usd,
-                "status": span.status,
-                "trace_id": span.trace_id,
-                "tags": span.tags,
-            }
-        # per-tracer /v1/ingest shape
-        return {
-            "input": span.input_text,
-            "teacher": span.output_text or None,
-            "output": span.output_text or None,
-            "model": span.response_model or span.request_model or "observed",
-            "cost_usd": span.cost_usd,
-            "ts": span.start_time or None,
-        }
-
-    def emit(self, span: GenAISpan) -> None:
-        try:
-            self._q.put_nowait(self._event(span))
-        except Exception:  # queue full -> drop rather than block the host
-            if os.environ.get("TRACER_WATCH_DEBUG"):
-                print("[tracer.watch] cloud queue full, dropping span")
-
-    def _post(self, events: List[Dict[str, Any]]) -> None:
-        import urllib.request
-
-        body = {"events": events} if self._observe else {"source": self.source, "events": events}
-        data = json.dumps(body, default=str).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.key}",
-            # A real UA: default urllib UA trips Cloudflare bot protection (403/1010).
-            "User-Agent": "tracer-watch/0.2.0 (+https://tracerml.ai)",
-        }
-        req = urllib.request.Request(f"{self.base_url}{self.path}", data=data, headers=headers, method="POST")
-        try:
-            urllib.request.urlopen(req, timeout=self.timeout).read()
-        except Exception as e:  # never let telemetry crash or block the host
-            if os.environ.get("TRACER_WATCH_DEBUG"):
-                print(f"[tracer.watch] cloud export failed: {e}")
-
-    def _drain(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        while len(out) < self.batch_size:
-            try:
-                out.append(self._q.get_nowait())
-            except Exception:
-                break
-        return out
-
-    def _run(self) -> None:
-        while not self._stop.is_set():
-            self._stop.wait(self.flush_interval)
-            batch = self._drain()
-            while batch:
-                self._post(batch)
-                batch = self._drain()
-
-    def close(self) -> None:
-        # Flush whatever is queued, then stop the worker.
-        batch = self._drain()
-        while batch:
-            self._post(batch)
-            batch = self._drain()
-        self._stop.set()
-
-
 # --------------------------------------------------------------------------- #
-# Watcher: the decorator / context manager. The one object the cloud reuses.
+# Watcher: the decorator / context manager. Records calls to local or explicitly configured sinks.
 # --------------------------------------------------------------------------- #
 def _new_id(n: int = 16) -> str:
     return uuid.uuid4().hex[:n]
@@ -538,7 +408,6 @@ class Watcher:
         model: Optional[str] = None,
         operation: str = "chat",
         sink: Optional[Sink] = None,
-        cloud_key: Optional[str] = None,
         extract_input: Callable[[tuple, dict], str] = _default_extract_input,
         extract_output: Callable[[Any], str] = _default_extract_output,
         default_tags: Optional[List[str]] = None,
@@ -547,24 +416,17 @@ class Watcher:
         self.system = system
         self.model = model
         self.operation = operation
-        # Default: local-only. Free Tracer Cloud streaming turns on with a
-        # single key -- the cloud_key kwarg or TRACER_CLOUD_KEY env. OTLP fan-out
-        # to any backend stays available via TRACER_WATCH_OTLP_ENDPOINT [+ _HEADERS].
-        self.sink: Sink = sink or self._sink_from_env(name, cloud_key)
+        # Default: local-only. Generic export is opt-in via an explicit sink
+        # or TRACER_WATCH_OTLP_ENDPOINT [+ _HEADERS].
+        self.sink: Sink = sink or self._sink_from_env(name)
         self.extract_input = extract_input
         self.extract_output = extract_output
         self.default_tags = list(default_tags or [])
 
     @staticmethod
-    def _sink_from_env(name: str, cloud_key: Optional[str] = None) -> Sink:
+    def _sink_from_env(name: str) -> Sink:
         local = LocalFileSink(name, dir=os.environ.get("TRACER_WATCH_DIR", ".tracer/watch"))
         sinks: List[Sink] = [local]
-
-        # Free Tracer Cloud observability: one key, no login. Shows up in the
-        # dashboard within seconds.
-        key = cloud_key or os.environ.get("TRACER_CLOUD_KEY")
-        if key:
-            sinks.append(TracerCloudSink(key, source=name))
 
         # Generic OTLP fan-out (any OTLP/HTTP backend).
         endpoint = os.environ.get("TRACER_WATCH_OTLP_ENDPOINT")

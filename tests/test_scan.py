@@ -1,8 +1,8 @@
-"""Tests for `tracer scan` (scanner.py).
+"""Tests for `tracer.scan()` (scanner.py).
 
 Covers the behaviours of the day-one scan: the data-volume gate (min 1,000
-traces unless forced, ~5,000 suggested), --force coarsening, the stable
-label-colour map, and the terminal + HTML rendering. Everything here uses only
+traces unless forced, ~5,000 suggested), force=True coarsening, the stable
+label-colour map, and the plain-text + HTML rendering. Everything here uses only
 the base deps (numpy, scikit-learn), so it runs in the core CI matrix without
 the embeddings/viz extras and without any network access.
 """
@@ -54,7 +54,7 @@ def test_thin_data_gate_message_points_at_force_and_suggestion(tmp_path):
     msg = str(exc.value)
     assert f"{MIN_SCAN_TRACES:,}" in msg
     assert f"{SUGGESTED_SCAN_TRACES:,}" in msg
-    assert "--force" in msg
+    assert "force=True" in msg
 
 
 def test_scan_runs_above_minimum_without_force(tmp_path):
@@ -66,7 +66,7 @@ def test_scan_runs_above_minimum_without_force(tmp_path):
     assert r.certifiable_share > 0.5
 
 
-# ── --force ───────────────────────────────────────────────────────────────────
+# ── force=True ───────────────────────────────────────────────────────────────────
 
 def test_force_runs_below_minimum_and_marks_forced(tmp_path):
     p, X = _write_traces(tmp_path, 300)
@@ -100,13 +100,13 @@ def test_format_scan_renders(tmp_path):
     p, X = _write_traces(tmp_path, 1200)
     out = format_scan(scan(p, embeddings=X))
     assert "certifiable" in out.lower()
-    assert "tracer fit" in out
+    assert "tracer.fit()" in out
 
 
 def test_scan_html_has_branding_and_label_toggle(tmp_path):
     p, X = _write_traces(tmp_path, 1200)
     html = scan_html(scan(p, embeddings=X), "synthetic")
-    for needle in ("tracerml.ai", "vt-label", "vt-verdict",
+    for needle in ("github.com/adrida/tracer", "vt-label", "vt-verdict",
                    "function setMode", 'id="run-fit"', 'id="texttip"'):
         assert needle in html, f"missing {needle!r} in scan_html output"
 

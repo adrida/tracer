@@ -71,9 +71,6 @@ Repository = "https://github.com/adrida/tracer"
 Documentation = "https://github.com/adrida/tracer#readme"
 "Bug Tracker" = "https://github.com/adrida/tracer/issues"
 
-[project.scripts]
-tracer = "tracer.cli.main:main"
-
 [tool.hatch.version]
 path = "src/tracer/__init__.py"
 
