@@ -1,4 +1,4 @@
-"""Parity-gated pipeline construction.
+"""Candidate construction and threshold selection on development data.
 
 Three candidate families: global, l2d, rsb.
 Acceptor features: top1-prob, top2-prob, margin, normalized-entropy.
@@ -142,33 +142,12 @@ def _accept_scores(acceptor, probs):
 
 def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_accept=10,
                          seed=42):
-    """Choose the accept threshold on a held-out lower bound, then check it generalises.
+    """Select a threshold using development agreement and bound diagnostics.
 
-    Earlier iterations sat at two extremes. The original gate selected the
-    threshold and reported its agreement on the *same* calibration set (in-sample
-    point estimate), so a threshold could clear target by luck and break the
-    contract on real traffic. The next version held out 50% for a Clopper-Pearson
-    verification, which is provably valid (distribution-free) but so data-hungry that on a few-hundred
-    calibration rows it certified NOTHING at strict targets (banking77 0% @0.98)
-    even though the confidence ranking clearly supported partial coverage.
-
-    This is the hybrid that keeps the held-out guarantee while recovering that coverage:
-
-      1. Select on a 70% slice: among thresholds whose Clopper-Pearson LOWER bound
-         on accepted agreement clears target, take the highest-coverage one
-         (lowest threshold). The lower bound, not the point estimate, removes the
-         in-sample optimism at selection time.
-      2. Verify generalisation on the held-out 30% with the point estimate
-         (accepted agreement >= target). This catches a selection-bias fluke (a
-         threshold that only clears by luck) without demanding CP-tightness on the
-         small verification slice, which is what starved the 50/50 version.
-      3. Walk candidates in coverage order and deploy the highest-coverage one
-         that survives the held-out check, so coverage is monotonic in target.
-
-    On very little data (n < 40) there is nothing to hold out, so it falls back to
-    a single-set Clopper-Pearson lower-bound gate (still a valid lower bound, just not held-out)
-    and flags it. Validated across seeds and datasets at 0.90-0.98 with zero
-    held-out contract violations.
+    Selection searches thresholds and may reuse the internal verification
+    slice. These diagnostics are not a post-selection confidence guarantee.
+    Public fit() checks the final policy, including OOD, once on a separate
+    untouched partition via certify_policy().
     """
     n = len(scores)
     holdout = False
@@ -221,9 +200,12 @@ def _calibrate_threshold(scores, preds, y_teacher, target_ta, alpha=0.1, min_acc
         acc_all = scores >= t
         n_all = int(acc_all.sum())
         k_all = int((preds[acc_all] == y_teacher[acc_all]).sum())
+        lower_all = _cp_lower(k_all, n_all, alpha)
+        if lower_all < target_ta:
+            continue
         return {"threshold": float(t),
                 "teacher_agreement": float(k_all / n_all),
-                "teacher_agreement_lower": float(_cp_lower(k_all, n_all, alpha)),
+                "teacher_agreement_lower": float(lower_all),
                 "coverage": float(acc_all.mean()),
                 "holdout": holdout}
     return None
@@ -238,10 +220,10 @@ def _predict(clf, X):
 
 def build_global(split, target_ta, alpha: float = 0.1, log: Optional[LogFn] = None,
                  skip: Iterable[str] = (), seed=42):
-    """Global pipeline: one surrogate, accept all if the agreement lower bound
-    clears the target. Gating on the Clopper-Pearson lower bound (not the raw
-    point estimate) stops a small or lucky calibration set from certifying an
-    accept-all deploy that then breaks the contract on real traffic."""
+    """Select an accept-all candidate using a development bound diagnostic.
+
+    Final deployment certification is separate from this candidate sweep.
+    """
     log = log or _noop_log
     if len(np.unique(split["y_train"])) < 2 or len(split["X_val"]) == 0:
         return {"method": "global", "stages": [], "summary": {"status": "insufficient_data", "coverage_cal_total": 0.0}}
@@ -449,11 +431,10 @@ def _pipeline_cal_summary(method, stages, X_cal, y_cal):
 def fit_frontier(X, y_teacher, targets, max_fit_labels=8000, min_coverage=0.05,
                  alpha: float = 0.1,
                  log: Optional[LogFn] = None, skip: Iterable[str] = (), seed=42):
-    """Build global/l2d/rsb for each target TA, return best per target.
+    """Build and select global/l2d/rsb candidates on development data.
 
-    `alpha` is the confidence level for the deployment lower bound: a candidate
-    is only certified if the lower bound on its held-out teacher agreement clears
-    the target, so reported coverage reflects a held-out lower bound rather than an in-sample point estimate.
+    All returned coverage and agreement values are selection diagnostics.
+    They are not certification of the adaptively chosen final serving policy.
     """
     log = log or _noop_log
     log(f"fit_frontier: X={X.shape} targets={sorted(set(float(t) for t in targets))} "

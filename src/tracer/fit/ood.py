@@ -1,7 +1,7 @@
 """Distance-based out-of-distribution (OOD) gate.
 
-The parity gate certifies how often the surrogate agrees with the teacher *on
-traffic that looks like the calibration data*. It says nothing about inputs that
+The final policy check estimates teacher agreement on held-out traffic from the
+same distribution. It says nothing about inputs that
 fall outside that distribution: an off-topic query, gibberish, a prompt-injection
 string, or a different-domain item can still get a confident surrogate prediction
 and slip through. This gate is the safety net: at fit time it measures how far
@@ -10,7 +10,7 @@ defers any query that lands further out than that, regardless of surrogate
 confidence.
 
 Mechanism (deliberately commodity): mean distance to the k nearest training
-neighbours, with a 95th-percentile threshold taken globally and per predicted
+neighbours, with a 99.5th-percentile threshold taken globally and per predicted
 label (global fallback for sparse labels). This is standard kNN-distance OOD
 detection. It is intentionally NOT keyed on the partition cells, the cell
 construction is out of scope here; this gate only needs the input embeddings and

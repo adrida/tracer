@@ -5,13 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "tracer-llm"
 dynamic = ["version"]
-description = "TRACER: Trace-Based Adaptive Cost-Efficient Routing. Turn LLM traces into parity-gated routing policies - cut 90%+ of LLM calls with formal guarantees."
+description = "Distill LLM traces into ML System 1 models with calibrated teacher deferral."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.12"
 keywords = [
     "llm", "routing", "surrogate", "cost-reduction", "learn-to-defer",
-    "conformal-prediction", "machine-learning", "explainability", "xai",
+    "selective-classification", "machine-learning", "explainability", "xai",
+    "system-1", "teacher-student",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

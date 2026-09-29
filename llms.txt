@@ -1,17 +1,32 @@
-# TRACER - tracer-llm
+# TRACER - Distill your LLM traces into fast ML System 1 models.
 
 > **TRACER** = Trace-Based Adaptive Cost-Efficient Routing.
-> Turn LLM classification traces into routing policies. Surrogate handles easy traffic; teacher LLM handles hard. Formal quality guarantees.
+> Turn teacher traces into task-specific ML students for easy, repetitive decisions. The hybrid architecture uses calibrated deferral: the teacher handles requests the students decline. The teacher may be an LLM, a foundation model for System 1 decisions, or another classifier. The student predicts labels directly from embeddings; the caller implements teacher fallback. Student fitting and inference can run on CPU. A separate final check measures accepted teacher agreement. Coverage and savings depend on the data; confidence bounds assume independent, representative examples without adaptive holdout reuse.
+
+This is a free MIT Python library for fixed-label tasks, not a pretrained general
+model listed on OpenRouter. No Tracer account is required. The encoder and teacher
+are caller-supplied; fitting the student does not fine-tune either. The current
+source has no CLI. Hosted app accounts, credits and management are separate.
+CHANGELOG.md distinguishes unreleased source from published packages.
 
 ## Install
 Requires Python 3.12+. CI tests Python 3.12, 3.13, and 3.14.
-pip install tracer-llm
+Published package: pip install tracer-llm
+Current checkout with the unreleased corrections: python -m pip install -e .
+The published package may not contain the source changes documented here.
 
 ## Core API (4 functions)
 tracer.fit("traces.jsonl", embeddings=X) → FitResult
 tracer.load_router(".tracer", embedder=e) → Router
 router.predict("text" or embedding) → {label, decision, accept_score}
 tracer.update("new.jsonl", new_embeddings=X_new) → FitResult
+
+decision is "handled" or "deferred"; OOD is included in "deferred", not a third
+public value. accept_score is a ranking signal, not a correctness probability.
+Check manifest.selected_method and manifest.certification before loading.
+Default final holdout fraction=.20; certification_alpha=.10; target agreement=.90.
+Fit into a separate directory to evaluate a replacement before promotion: a
+completed noncertifying fit publishes selected_method=null in its target directory.
 
 ## Trace format (JSONL, one per line)
 {"input": "user text", "teacher": "label_from_llm"}
@@ -22,8 +37,9 @@ Embedder.from_endpoint("https://api/embed", headers={...})
 Embedder.from_callable(fn)
 
 ## Docs
-- AGENTS.md - full integration guide for AI agents
+- AGENTS.md - integration notes
 - README.md - user-facing docs
+- docs/system1.md - teacher/student overview, OSS/cloud scope and release status
 - docs/api.md - Python API reference
 - docs/scan.md - pre-training diagnostics
 - docs/watch.md - local trace recording and generic exports

@@ -2,12 +2,13 @@
 
 Thank you for your interest in contributing.
 
-TRACER is a routing library with formal parity guarantees, and those guarantees
-only mean something if they hold up under measurement. So for anything that can
-change routing behavior, the most useful thing you can bring is evidence. The
-standards below exist to keep contributions focused and to make the best use of
-your time and ours. None of this is meant to gatekeep good ideas. it's meant to
-help us evaluate them fairly.
+TRACER builds task-specific classifiers: classical or
+shallow neural classifiers make direct fixed-label decisions, while a learned
+policy leaves other requests to the caller's teacher. The final check bounds
+teacher agreement under stated sampling assumptions. It does not guarantee
+ground-truth accuracy, per-request correctness or robustness to distribution
+shift. Contributions should preserve those distinctions and provide evidence
+for changes in behavior.
 
 ## Contribution standards (read first)
 
@@ -24,8 +25,8 @@ for us to act on when they come with numbers. Three guidelines follow from that.
 
 2. **Changing a core parameter, threshold, or gate: bring an ablation.** The
    acceptor threshold, the parity gate, the calibration logic, the default
-   `FitConfig` values, and the split strategy are load-bearing for the parity
-   guarantee. A change to any of them is much easier to accept with before/after
+   `FitConfig` values, and the split strategy determine the statistical contract.
+   A change to any of them is much easier to accept with before/after
    numbers on the eval showing the frontier does not regress (and, ideally,
    improves). If you think a parameter should be user-tunable, the most
    convincing case is one where a different value measurably wins.
@@ -45,14 +46,23 @@ Run against a fixed, public eval so results are reproducible by a maintainer:
 - Use a known dataset (the repo's test fixtures, or a public set such as
   Banking77) and a fixed `seed`.
 - Report the metric that matters: **coverage at the target teacher agreement**
-  (how much traffic the surrogate can take while holding parity), plus the
-  realized teacher agreement on a held-out split (not the calibration split).
+  together with accepted counts, realized agreement, the final lower bound and
+  confidence level. Use an untouched evaluation split, not the examples used
+  for classifier/threshold selection. Where ground truth exists, report its
+  accuracy separately, including per-class or worst-group behavior.
+- Measure full-path latency and cost when claiming efficiency: embeddings,
+  student inference, teacher deferrals and relevant serving overhead. A gate's
+  score is not a calibrated per-request correctness probability.
+- Separate sessions/workflows/time where the dataset permits; random row splits
+  do not establish independence. Preserve historical benchmark results and label
+  new results with their exact implementation and evaluation protocol.
 - Compare against the current behavior on `main`, so the delta is clear.
 - Include the exact command and config you ran so the numbers can be checked.
 
-If a change does not move the frontier (or regresses it), we'll usually hold
-off on merging even when the code itself is clean, since the numbers are what
-we're optimizing for.
+Performance proposals should show their tradeoff. Correctness fixes, truthful
+contracts and reproducible failure handling are valuable even when they reduce
+previously overstated coverage; they do not need an invented benchmark win.
+Never retune a policy against its final certification outcomes to make it pass.
 
 ## Setup
 
@@ -68,6 +78,8 @@ pip install -e ".[dev]"
 ## Running tests
 
 ```bash
+TOKENIZERS_PARALLELISM=false RAYON_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
 pytest tests/ -v
 ```
 
@@ -97,6 +109,8 @@ src/tracer/
   types.py               <- TraceRecord, QualitativeReport, ArtifactManifest, ...
   fit/
     pipeline.py          <- global / L2D / RSB pipeline construction + calibration
+    certification.py     <- untouched final-policy teacher-agreement check
+    ood.py               <- distance guard, included in final serving check
     surrogate.py         <- model zoo (LogReg, SGD, MLP, RF, ET, DT, GBT, XGB) + selection
   analysis/
     qualitative.py       <- XAI report: slices, boundary pairs, examples, deltas
@@ -134,17 +148,30 @@ further. It's usually quick to run, and it's the thing that lets us say yes.
 
 ## Changing the gate, calibration, or default config
 
-These are the parts that back the parity guarantee. A PR here must include an
-ablation: the frontier on `main` versus the frontier with your change, on the
-same eval and seed. State clearly which guarantee you are strengthening and
-show it does not regress coverage or realized agreement.
+These parts define selection and final certification. Performance changes need
+an ablation on the same external evaluation and seed. Contract/correctness fixes
+need focused regressions that demonstrate the broken behavior and its repair.
+Verify that no final outcomes influence training, threshold selection, OOD
+fitting or retries. Keep no-policy results, exceptions and legacy-artifact
+behavior explicit; a completed failed check and a failed write are different.
 
 ## Adding a new pipeline family
 
 Implement a `build_<name>(split, target_ta) -> dict` function in
 `src/tracer/fit/pipeline.py` following the same structure as `build_global`,
 `build_l2d`, and `build_rsb`. Register it in the `builders` dict inside
-`fit_frontier`. Include a benchmark showing where the new family wins.
+`fit_frontier`, preserving the builders' keyword options. Include a benchmark
+showing where the new family wins. The full selected policy, including residual
+stages and OOD checks, must receive the final check and match runtime behavior.
+
+## Documentation and integration boundaries
+
+Check examples against current function signatures and saved artifact fields.
+The bundled HTTP server takes vectors and does not call teachers. Generic
+embedding/export adapters do not imply a turnkey provider integration or
+standards-compliant OTLP transport. The current package exposes Python APIs,
+not a packaged CLI; hosted catalogs, credentials and Echo wallets are separate.
+Document proposed features as proposals rather than existing OSS capabilities.
 
 ## Submitting a PR
 

@@ -14,6 +14,12 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
 
 Measured with Python 3.12.13, NumPy 2.5.3, scikit-learn 1.9.1, and FAISS 1.15.1.
 The baseline is commit `0c918712c09a677feae80eede7069442c4e259a9`.
+The **Fixed** column records the historical implementation at
+`169edf886620f277555636aeb97be93991b1b849`. These measurements predate the
+independent final-policy certification changes described in the
+[change log](../CHANGELOG.md). They are preserved as regression evidence, not
+measurements of the current final-certification protocol. No new benchmark run
+is implied by this documentation update.
 
 | Case | Baseline | Fixed |
 |---|---:|---:|

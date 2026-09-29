@@ -1,6 +1,17 @@
 # Using TRACER from JavaScript / Node.js
 
-TRACER is a Python package, but it integrates cleanly into any JS/Node.js pipeline through its Python API and a self-hosted HTTP server. No Python goes into your application code.
+TRACER trains a fixed-label student in Python. Your Node application can use its
+direct decisions through the bundled HTTP sidecar and call your teacher when
+the policy defers. The JS package records traces; it does not train or execute
+the classifier. See [concepts](concepts.md) for the scope and quality contract.
+Your teacher can be an LLM, a foundation model for System 1 decisions, or an
+existing classifier. It supplies validated labels for the task; the student can answer
+accepted requests directly, while your application sends deferred requests to
+that teacher.
+
+This guide uses Python scripts, not a CLI. It does not connect to a hosted
+catalog, Tracer account or Echo wallet. Provider SDK calls below belong to your
+application and use your provider credentials and billing.
 
 ---
 
@@ -8,7 +19,7 @@ TRACER is a Python package, but it integrates cleanly into any JS/Node.js pipeli
 
 ### 1. Collect traces from your JS pipeline
 
-Every time your LLM classifies an input, append the result to a JSONL file:
+When your teacher classifies an input, append the result to a JSONL file:
 
 ```js
 import fs from 'fs'
@@ -18,20 +29,22 @@ function logTrace(input, label) {
   fs.appendFileSync('traces.jsonl', line + '\n')
 }
 
-// After every LLM classification:
-const label = await callYourLLM(userInput)
+// After a teacher classification:
+const label = await callYourTeacher(userInput)
 logTrace(userInput, label)
 ```
 
-Each line must have `input` (the text) and `teacher` (the label your LLM returned). That's all TRACER needs.
+Each line must have `input` (the text) and `teacher` (the label your teacher returned). These are the required trace fields.
 
 ---
 
 ### 2. Compute embeddings (offline, once before fit)
 
-The HTTP server at inference time expects embedding vectors, so you need to embed your traces before fitting. Use the same embedding model you plan to use at inference time, this is the only constraint.
+The HTTP server expects embedding vectors. Embed traces in exactly their input
+row order, and use the same encoder, revision and normalization at inference.
+Matching dimensions alone does not establish compatibility.
 
-**Option A: OpenAI embeddings (natural fit for JS pipelines)**
+**Option A: your existing embedding API (OpenAI SDK example)**
 
 ```bash
 pip install tracer-llm openai numpy
@@ -44,15 +57,23 @@ from openai import OpenAI
 
 client = OpenAI()
 texts = [json.loads(l)["input"] for l in open("traces.jsonl")]
-response = client.embeddings.create(model="text-embedding-3-small", input=texts)
-X = np.array([d.embedding for d in response.data])
+vectors = []
+for start in range(0, len(texts), 64):
+    response = client.embeddings.create(
+        model="text-embedding-3-small", input=texts[start:start + 64]
+    )
+    vectors.extend(d.embedding for d in sorted(response.data, key=lambda d: d.index))
+X = np.asarray(vectors, dtype=np.float32)
 np.save("traces.npy", X)  # TRACER auto-discovers this at fit time
 ```
 
-**Option B: Local embeddings (sentence-transformers, free)**
+These calls use your provider account. Check its input/token limits; the batch
+size is illustrative and does not make arbitrary-length traces admissible.
+
+**Option B: Local embeddings (sentence-transformers, no API charge)**
 
 ```bash
-pip install tracer-llm[embeddings]
+pip install 'tracer-llm[embeddings]'
 ```
 
 ```python
@@ -72,13 +93,21 @@ np.save("traces.npy", X)
 # fit_policy.py
 import tracer
 
-tracer.fit(
+result = tracer.fit(
     "traces.jsonl",
     config=tracer.FitConfig(target_teacher_agreement=0.95),
 )
+print(result.manifest.certification)
+if result.manifest.selected_method is None:
+    raise SystemExit("No student published; keep the teacher path active.")
 ```
 
 TRACER reads `traces.jsonl` and auto-discovers `traces.npy` (same stem, `.npy` extension). Run `python fit_policy.py` offline, in a cron job, a GitHub Action, or manually. It does not touch your application.
+
+The final reserved-sample check concerns teacher agreement, not ground-truth
+accuracy. A completed failed check publishes a null policy; use a separate
+candidate directory before promotion if a student is already serving. Embedding,
+training and local serving still consume resources.
 
 ---
 
@@ -103,12 +132,21 @@ access, configure authentication, TLS, and CORS at your reverse proxy.
 
 ## Predicting from your JS app
 
-At inference time, embed the input with the same model you used at fit time, then POST the embedding to TRACER. If the surrogate handles it, you get the label back immediately with no LLM call. If it defers, you call your LLM as usual and log the new trace.
+At inference time, embed the input with the same model you used at fit time,
+then POST the embedding to TRACER. If the student handles it, use its label
+without a teacher call. If it defers, call your teacher and log the new trace.
 
 **With OpenAI embeddings:**
 
+Install your application's SDK with `npm install openai`. The example assumes
+`callYourTeacher(text)` returns a validated string from your fixed label set and
+`logTrace()` is the function above.
+
 ```js
+import OpenAI from 'openai'
+
 const openai = new OpenAI()
+const tracerUrl = process.env.TRACER_URL ?? 'http://localhost:8000'
 
 async function route(text) {
   // 1. Embed the input (same model as at fit time)
@@ -119,25 +157,33 @@ async function route(text) {
   const embedding = embResponse.data[0].embedding
 
   // 2. Ask TRACER whether to handle locally or defer
-  const res = await fetch('http://localhost:8000/predict', {
+  const res = await fetch(`${tracerUrl}/predict`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ embedding }),
   })
+  if (!res.ok) throw new Error(`TRACER request failed: ${res.status}`)
   const { label, decision } = await res.json()
 
   if (decision === 'handled') {
-    return label  // surrogate answered, no LLM call
+    return label  // student answered, no teacher call
   }
 
-  // Deferred: call your LLM and log the new trace for the next refit
-  const llmLabel = await callYourLLM(text)
-  logTrace(text, llmLabel)
-  return llmLabel
+  if (decision !== 'deferred') throw new Error('Unexpected TRACER decision')
+
+  // Deferred: call your teacher. A separate sampling policy should also
+  // collect teacher labels on representative accepted traffic for evaluation.
+  const teacherLabel = await callYourTeacher(text)
+  logTrace(text, teacherLabel)
+  return teacherLabel
 }
 ```
 
-The embedding API call is cheap (fractions of a cent). The TRACER HTTP call is local and sub-millisecond. You only pay the full LLM cost on deferred inputs.
+This skips teacher execution for accepted inputs. Measure the complete path:
+embedding price and latency, local serving, network overhead and teacher calls.
+No sub-millisecond or fixed savings claim follows from this example. Serving
+errors above propagate explicitly; any retry/fallback-on-error policy is yours
+to define and account for.
 
 **Batch prediction:**
 
@@ -145,10 +191,11 @@ The embedding API call is cheap (fractions of a cent). The TRACER HTTP call is l
 const res = await fetch('http://localhost:8000/predict_batch', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ embeddings: [embedding1, embedding2, ...] }),
+  body: JSON.stringify({ embeddings: [embedding1, embedding2] }),
 })
+if (!res.ok) throw new Error(`TRACER request failed: ${res.status}`)
 const { labels, decisions, handled } = await res.json()
-// handled: boolean[]: true means surrogate answered, no LLM needed
+// handled: boolean[]: true means student answered, no teacher call needed
 ```
 
 ---
@@ -157,26 +204,40 @@ const { labels, decisions, handled } = await res.json()
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| `GET` | `/health` |, | `{"status": "ok", "method", "coverage", ...}` |
-| `POST` | `/predict` | `{"embedding": [float, ...]}` | `{"label", "decision", "accept_score"}` |
+| `GET` | `/health` | None | `status`, `method`, `coverage`, `teacher_agreement`, `n_labels`, `n_traces` |
+| `POST` | `/predict` | `{"embedding": [float, ...]}` | `label`, `decision`, `accept_score`, `stage` |
 | `POST` | `/predict_batch` | `{"embeddings": [[float, ...], ...]}` | `{"labels", "decisions", "handled"}` |
 
-`decision` is `"handled"` (surrogate answered, no LLM call needed) or `"deferred"` (call your LLM).
+`decision` is `"handled"` (student answered, no teacher call needed) or
+`"deferred"` (your application can call its teacher).
+Deferred labels are `null`. Rejection by the acceptance rule and by the OOD
+distance guard share this public state; there is no separate reason field.
+`accept_score` is a ranking signal, not certified per-request correctness.
+The server does not run a teacher for either single or batch requests, and is
+not an OpenAI/OpenRouter-compatible chat-completion endpoint.
 
 ---
 
 ## Continual learning
 
-Every deferred input that reaches your LLM is a new trace. Accumulate them and retrain periodically, coverage grows with each refit.
+Teacher-labeled requests can supply new training traces. Keep a representative
+sample of all traffic, including teacher checks on accepted requests; using
+only old-policy deferrals changes the training/evaluation distribution. Do not
+turn unchecked student predictions into teacher labels.
 
 ```python
 # Run this script on a schedule; supply matching embeddings or a sibling .npy.
 import tracer
 
-tracer.update("new_traces.jsonl", new_embeddings=X_new)
+result = tracer.update("new_traces.jsonl", new_embeddings=X_new)
+print(result.manifest.certification)
 ```
 
-Then restart the `serve_policy.py` process to pick up the updated policy. Coverage typically grows from ~84% at day 1 to 90%+ within a week of production traffic.
+Inspect the returned certification result before switching serving artifacts.
+Restart the sidecar or reload your application router after publication. Updates
+can increase or decrease coverage, or publish no policy. There is no automatic
+retraining schedule or promised week-one gain in the package. Avoid repeated
+tuning against reserved results; retain independent session/time evaluation.
 
 ---
 
@@ -217,10 +278,10 @@ Your Node app reads `process.env.TRACER_URL` and routes through it. Replace the 
 
 | Step | Where | Frequency |
 |------|-------|-----------|
-| Collect traces | Your JS app | Every LLM call |
+| Collect traces | Your JS app | Teacher classification calls |
 | Embed traces | Python script (offline) | Before each fit |
-| Fit policy | `tracer.fit()` in a Python script | On a schedule |
-| Serve predictions | `tracer.serve()` in a Python sidecar | Always-on |
+| Fit policy | `tracer.fit()` in a Python script | When you explicitly run it |
+| Serve predictions | `tracer.serve()` in a Python sidecar | While your service runs |
 | Embed input at inference | JS (same model/API) | Every prediction |
 | POST to TRACER | Your JS app | Every prediction |
 

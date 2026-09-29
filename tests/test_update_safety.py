@@ -64,7 +64,7 @@ def test_refit_failure_leaves_original_generation(artifacts, tmp_path, monkeypat
         (artifact_dir / 'pipeline.joblib').write_bytes(b'partial model')
         raise OSError('disk write failed')
 
-    monkeypatch.setattr('tracer.api.fit', fail_after_writing)
+    monkeypatch.setattr('tracer.api._fit_artifacts', fail_after_writing)
     with pytest.raises(OSError, match='disk write failed'):
         update(traces, output, new_embeddings=X)
     assert snapshot(output) == before
