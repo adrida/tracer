@@ -1,17 +1,21 @@
 # @tracer-llm/watch
 
-Local-first, OpenTelemetry-aligned LLM trace recording for JavaScript / TypeScript.
+Local-first, OpenTelemetry GenAI-aligned trace recording for JavaScript / TypeScript.
+Classification traces can become training data for a TRACER student:
+a small model that predicts fixed labels directly
+and leaves other inputs to your teacher. This package records calls only;
+fitting and routing use the [Python package or HTTP sidecar](../docs/javascript.md).
 
 Watch any model call in your pipeline with a wrapper, a method decorator, or an
 async span. No key, no account, nothing leaves your machine by default: traces
 are appended to `./.tracer/watch/<name>.jsonl`.
 
-- Standards-native schema: every watched call is recorded as a span following
-  the OpenTelemetry GenAI semantic conventions (`gen_ai.*`), so a record is
-  portable to any OTel-aware backend. No proprietary schema.
+- GenAI-aligned attributes (`gen_ai.*`) alongside the package's local span
+  fields. Validate the payload contract when connecting a collector.
 - Zero runtime dependencies. Node stdlib + the global `fetch` only.
-- Prod-safe: telemetry never throws into, or adds latency to, the host call.
-  Generic HTTP exports are sent asynchronously; export failures are swallowed.
+- Recording failures are contained. Local writes use synchronous filesystem
+  calls and add overhead; HTTP exports are asynchronous and best-effort. There
+  is no zero-latency or durable-delivery guarantee.
 
 ## Install
 
@@ -82,13 +86,21 @@ via `parentSpanId`, forming a trace tree (tracked with `AsyncLocalStorage`).
 
 | Sink              | What it does                                                             | Turned on by                                              |
 | ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------- |
-| `LocalFileSink`   | Append spans as JSONL to `<dir>/<name>.jsonl`. No network, no key.       | Default, always on.                                       |
-| `OTLPSink`        | POST an OTel GenAI-shaped payload to any OTLP/HTTP backend.              | `TRACER_WATCH_OTLP_ENDPOINT` (+ `TRACER_WATCH_OTLP_HEADERS`). |
+| `LocalFileSink`   | Append spans as JSONL to `<dir>/<name>.jsonl`. No network, no key.       | Default unless replaced by a custom sink.                 |
+| `OTLPSink`        | POST the package's GenAI-aligned JSON payload to your endpoint.         | `TRACER_WATCH_OTLP_ENDPOINT` (+ `TRACER_WATCH_OTLP_HEADERS`). |
 | `MultiSink`       | Fan-out to several sinks at once.                                        | Composed automatically when more than one is configured. |
 
 `sinkFromEnv(name)` composes local files with the generic HTTP sink when
 `TRACER_WATCH_OTLP_ENDPOINT` is explicitly configured. Pass `sink` to `watch()`
 for a custom exporter. There is no default remote destination.
+Despite its historical name, `OTLPSink` does not emit the standard OTLP
+`resourceSpans` envelope. It sends one JSON object with `name`, trace/span IDs,
+timestamps and `attributes`. Use a compatible endpoint or a translating sink;
+arbitrary OTLP collectors are not guaranteed to accept it unchanged.
+
+There is no automatic hosted account, model catalog, credit wallet or cloud
+training integration. The local JSONL contains recorded inputs and outputs;
+redaction and any sharing policy belong to the application.
 
 ## Provider response auto-extraction
 
@@ -108,6 +120,19 @@ Both objects and plain dicts are handled.
 | `TRACER_WATCH_OTLP_ENDPOINT`  | Endpoint for the OTLP/HTTP sink.                                | (unset)          |
 | `TRACER_WATCH_OTLP_HEADERS`   | Comma-separated `k=v` headers for the OTLP sink.                | (unset)          |
 | `TRACER_WATCH_DEBUG`          | Print why a telemetry send was dropped (never affects the host).| (unset)          |
+
+## From recording to a student
+
+Select successful fixed-label classification calls, extract the validated label
+from each output, and write `{"input":"...","teacher":"label"}` JSONL.
+Provider response text is not automatically parsed into your label schema.
+Compute matching embeddings and use Python `tracer.fit()`; inspect the final
+teacher-agreement certificate before serving. Keep session metadata for separate
+holdouts and include representative traffic, not just deferred requests. General
+chat or tool trajectories do not automatically become classification examples.
+
+Teacher agreement is distinct from ground-truth accuracy. No coverage, savings,
+or per-request correctness guarantee comes from installing this recorder.
 
 ## License
 

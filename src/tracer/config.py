@@ -27,6 +27,10 @@ class FitConfig:
     max_fit_labels: int = 8_000
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     seed: int = 42
+    # This partition is reserved before fitting or candidate selection. The
+    # final, fixed serving policy is checked once with a one-sided bound.
+    certification_fraction: float = 0.20
+    certification_alpha: float = 0.10
     # Emit per-candidate + per-stage progress to stderr during fit. Disable
     # for quiet notebook / CI runs.
     verbose: bool = True
@@ -54,3 +58,7 @@ class FitConfig:
                 f"{self.min_deploy_coverage}")
         if self.max_fit_labels <= 0:
             raise ValueError(f"max_fit_labels must be > 0, got {self.max_fit_labels}")
+        if not 0.0 < self.certification_fraction < 1.0:
+            raise ValueError("certification_fraction must be in (0, 1)")
+        if not 0.0 < self.certification_alpha < 1.0:
+            raise ValueError("certification_alpha must be in (0, 1)")

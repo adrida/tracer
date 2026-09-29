@@ -1,6 +1,6 @@
 # TRACER
 
-**Trace-Based Adaptive Cost-Efficient Routing**
+**System 1 decisions from your classification traces.**
 
 [![arXiv](https://img.shields.io/badge/arXiv-2604.14531-b31b1b.svg)](https://arxiv.org/abs/2604.14531)
 [![Hugging Face](https://img.shields.io/badge/🤗%20HF-Papers-yellow)](https://huggingface.co/papers/2604.14531)
@@ -10,50 +10,183 @@
 [![Python](https://img.shields.io/pypi/pyversions/tracer-llm)](https://pypi.org/project/tracer-llm/)
 [![npm](https://img.shields.io/npm/v/@tracer-llm/watch?label=%40tracer-llm%2Fwatch&color=cb3837&logo=npm)](https://www.npmjs.com/package/@tracer-llm/watch)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/adrida/tracer/actions)
+[![CI](https://github.com/adrida/tracer/actions/workflows/ci.yml/badge.svg)](https://github.com/adrida/tracer/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-reference-blue)](docs/)
 
-Most LLM-based classification pipelines use a large language model for every single input. In practice, the vast majority of that traffic is predictable - a lightweight traditional ML model (logistic regression, gradient-boosted trees, or a small neural net) can match the LLM's output with near-perfect agreement.
+TRACER turns a teacher model's past decisions into a local **student** that
+predicts labels directly. A learned acceptance rule and an embedding-distance
+guard decide which student predictions to return. Other requests defer to the
+teacher through your application.
 
-TRACER learns the decision boundary between "easy" and "hard" inputs directly from your LLM's own classification traces. It fits a fast, non-LLM surrogate on the easy partition, gates it with a calibrated acceptor, and defers only the uncertain inputs back to the LLM. Every deferred call produces a new trace, which feeds the next refit - coverage grows automatically over time. The result: **90%+ of classification calls routed to traditional ML, with formal parity guarantees against the teacher LLM and a self-improving routing policy**.
+Use it for recurring, fixed-label work: intent classification, tagging, support
+routing and discrete workflow decisions.
+Classical classifiers can return final labels directly; ML also learns when to
+defer. The student search includes linear classifiers, trees and compact MLPs.
+The semantic encoder is supplied separately and is not fine-tuned by `fit()`.
 
-```bash
-pip install tracer-llm
+```text
+Teacher-labelled traces + matching embeddings
+                     │ offline fit
+                     ▼
+             Student + acceptance policy
+                     │
+New input → embedding → student predicts a label
+                              │
+                    acceptance + distance guard
+                         ┌────┴────┐
+                      handled    deferred
+                         │          │
+                  return label   caller's teacher
 ```
 
-Requires **Python 3.12+**. CI tests Python 3.12, 3.13, and 3.14.
+Fit and inference can run locally under the [MIT license](LICENSE), with no
+Tracer account or license fee. Your embedding, teacher and serving costs still
+apply. Coverage, latency and savings must be measured on your workload.
 
-## Quickstart
+**Source release status:** the final-policy certification, staged publication
+and strict OOD-loading corrections described here are **unreleased source
+changes**. Installing `tracer-llm` from PyPI installs the published package; it
+does not establish that these corrections are present. See the
+[change log](CHANGELOG.md) and [overview](docs/system1.md).
 
-Input: a JSONL file where each line contains the original text (`input`) and the label your LLM assigned (`teacher`).
+## Quickstart from this source
+
+From a checkout containing these changes:
+
+```bash
+python -m pip install -e .
+```
+
+Requires **Python 3.12+**. The core depends on NumPy, scikit-learn and joblib.
+With precomputed embeddings, fitting does not require a teacher API key or GPU.
+Some fitting candidates use multiple CPU cores; choose the candidate set and
+resource limits appropriate to your machine.
+
+Each trace contains the original text and the teacher's fixed-label answer:
+
+```jsonl
+{"input": "What is my balance?", "teacher": "check_balance"}
+{"input": "Send $50 to Alice", "teacher": "transfer_money"}
+```
+
+These rows illustrate the format. Training needs a representative dataset with
+enough independent examples to fit, select and check a policy. Store embeddings
+in the same row order, using a consistent encoder and preprocessing.
+
+```python
+import numpy as np
+import tracer
+
+X = np.load("traces.npy")  # shape: (number_of_traces, embedding_dimension)
+result = tracer.fit(
+    "traces.jsonl",
+    embeddings=X,
+    config=tracer.FitConfig(target_teacher_agreement=0.95),
+)
+print(result.manifest.certification)
+
+if result.manifest.selected_method is None:
+    raise RuntimeError("No deployable policy: inspect the final check and data.")
+
+router = tracer.load_router(".tracer")
+out = router.predict(np.load("new_request.npy"))  # one vector from the same encoder
+# handled:  {"label": "check_balance", "decision": "handled", ...}
+# deferred: {"label": None, "decision": "deferred", ...}
+```
+
+To accept raw text, attach the same embedding implementation used during fit.
+Matching vector dimensions alone is insufficient: weights, normalization and
+preprocessing must match too.
+
+```python
+embedder = tracer.Embedder.from_callable(my_embedding_function)
+router = tracer.load_router(".tracer", embedder=embedder)
+
+text = "What is my balance?"
+out = router.predict(text, fallback=lambda: call_my_teacher(text))
+```
+
+`my_embedding_function` accepts a list of strings and returns an embedding
+matrix. The optional fallback takes no arguments and runs only for a deferred
+request. Its return value becomes `label`; `decision` remains `"deferred"`.
+Without a fallback, your application handles deferral explicitly.
+
+## What is learned
+
+1. Reserve final certification rows before label discovery, balancing or fitting.
+2. Select student classifiers using validation macro-F1 against teacher labels.
+3. Fit acceptance policies and select a global or staged policy for the chosen
+   teacher-agreement target and coverage requirement on development data.
+4. Freeze that serving policy, including its distance guard, and check it once
+   on the reserved rows. A failed final check does not trigger another candidate
+   search on those rows.
+
+The ML student produces the label; the acceptance policy controls whether to
+use it. An out-of-distribution distance rejection also returns `"deferred"`.
+The public result has two decisions, `"handled"` and `"deferred"`; it does not
+expose a separate OOD decision or a reason field.
+
+For a smaller fitting sweep, `FitConfig(skip_candidates=("dt", "rf", "et",
+"gbt", "xgb"))` excludes tree candidates. This changes the search budget, not
+the selected quality requirement. See [concepts](docs/concepts.md) for methods
+and [API reference](docs/api.md) for the complete configuration.
+
+## What the quality check establishes
+
+For the fixed final serving policy, a one-sided Clopper–Pearson lower bound on
+**teacher agreement among accepted requests** must meet the target. Defaults
+reserve 20% of input rows and use `certification_alpha=0.10`, corresponding to a
+90% one-sided confidence level under independent, representative sampling.
+Accepted coverage must also meet `min_deploy_coverage`. Zero accepted examples
+cannot pass this check.
+
+Teacher agreement is distinct from ground-truth accuracy. This aggregate bound
+does not certify each prediction or each class. `accept_score` is a ranking
+signal, not a calibrated per-request correctness probability. The distance
+guard can reject unfamiliar embeddings; it provides no general guarantee
+against distribution shift.
+
+The built-in reserve is a random row split. Correlated sessions, duplicates,
+adaptive reuse of the reserve and later traffic changes can invalidate the
+sampling interpretation. Keep separate session/time evaluations, inspect rare
+classes and measure both accepted quality and coverage before relying on a
+policy. Paper results are historical experiments, not measurements of this
+revised certification implementation.
+
+## Local serving and updates
+
+A fitted router can run inside your Python application or through the small
+built-in HTTP server:
 
 ```python
 import tracer
-
-# 1. Fit - learn a routing policy from your LLM's classification traces
-result = tracer.fit(
-    "traces.jsonl",                  # {"input": "...", "teacher": "label"} per line
-    embeddings=X,                    # np.ndarray (n, dim) - precomputed text embeddings
-    config=tracer.FitConfig(target_teacher_agreement=0.95),
-)
-
-# 2. Route - surrogate handles easy inputs, LLM handles the rest
-router = tracer.load_router(".tracer", embedder=embedder)
-out = router.predict("What is my balance?")
-# {"label": "check_balance", "decision": "handled", "accept_score": 0.96}
-
-# 3. Fallback - only invokes the LLM when the surrogate declines
-out = router.predict("Some edge case", fallback=lambda: call_my_llm(text))
+tracer.serve(".tracer", host="127.0.0.1", port=8000)
 ```
-The [API reference](docs/api.md) covers fitting, routing, updates, and reports.
-See [concepts](docs/concepts.md) for the pipeline and [watch](docs/watch.md) for
-local trace recording and opt-in exports to your own backend.
 
-## Watch your LLM traffic
+It exposes `POST /predict` with `{"embedding": [...]}`, `POST /predict_batch`
+with `{"embeddings": [[...], ...]}`, and `GET /health`. The server accepts
+embeddings; the calling application owns text encoding and teacher fallback.
+It does not add authentication or TLS. You can integrate the same Python
+router into your own authenticated service.
 
-Before you fit anything, just *watch*. Wrap any LLM call and every request is
-recorded locally as an OpenTelemetry GenAI span, no account, no key, nothing
-leaves your machine:
+`update()` combines stored and new traces and refits the policy:
+
+```python
+tracer.update("new_traces.jsonl", new_embeddings=X_new)
+```
+
+Coverage may rise or fall. Collect a representative sample of all traffic, not
+only deferrals, when estimating overall coverage. `fit()` and `update()` stage
+artifacts and roll back on fitting or publication **exceptions**. A completed
+refit that fails certification can intentionally publish
+`selected_method=null`, replacing the prior on-disk generation. Check the new
+manifest before reloading. Use one writer per artifact directory; these file
+operations do not provide concurrent-reader or zero-downtime deployment control.
+
+## Record traces and inspect traffic
+
+`tracer.watch()` records your model calls locally by default, with optional
+export to your own backend. It does not train a student until you call `fit()`.
 
 ```python
 import tracer
@@ -62,160 +195,62 @@ watch = tracer.watch("support_classifier", system="my-provider", model="my-model
 
 @watch
 def classify(ticket: str) -> str:
-    return call_my_llm(ticket)   # traces append to .tracer/watch/*.jsonl
+    return call_my_teacher(ticket)
 ```
 
-The same watched spans map 1:1 to `TraceRecord`, so once you have traffic you can
-call `tracer.fit()` to train a router from it. Full guide: [docs/watch.md](docs/watch.md).
+[Watch](docs/watch.md) documents trace recording and export. For JavaScript,
+[`@tracer-llm/watch`](js/README.md) records calls; training and prediction remain
+in the Python library. The [JavaScript guide](docs/javascript.md) shows the
+Python sidecar integration.
 
-## Using from JavaScript / Node.js
+`tracer.scan()` groups embedded traces and reports per-cluster diagnostics. It
+needs at least 1,000 traces by default; `force=True` permits an explicitly thin
+data estimate. Scanning does not train or certify the final serving policy.
+See the [scan guide](docs/scan.md).
 
-**Watch your JS LLM calls (free observability):** [`@tracer-llm/watch`](https://www.npmjs.com/package/@tracer-llm/watch) mirrors the Python decorator with zero dependencies, recording every call as an OpenTelemetry GenAI span (local by default, with opt-in export to your own backend).
+## Embeddings and artifacts
+
+Use supplied NumPy arrays, `Embedder.from_callable`, a compatible HTTP endpoint,
+or a local sentence-transformers encoder. To install the optional local encoder
+support from this checkout:
 
 ```bash
-npm install @tracer-llm/watch
+python -m pip install -e '.[embeddings]'
 ```
 
-```js
-import { watch } from "@tracer-llm/watch";
+`tracer.embed(texts)` defaults to `all-MiniLM-L6-v2`. Optional encoders can require
+model downloads; `fit()` itself does not train or package the encoder.
 
-const w = watch("support_classifier", { system: "provider-x", model: "model-x" });
+| Artifact | Purpose |
+| --- | --- |
+| `manifest.json` | Selected method, label space and final certification result |
+| `pipeline.joblib` | Fitted students, acceptors and thresholds |
+| `frontier.json` | Candidate-selection diagnostics, separate from final certification |
+| `ood.json`, `ood_reference.npy` | Distance guard and its development-only reference, when fitted |
+| `all_traces.jsonl`, `index/` | Stored traces and embeddings used by updates |
+| `qualitative_report.json` | Per-label slices, examples and boundary pairs |
+| `report.html` | Optional HTML report generated with `tracer.generate_html_report()` |
 
-// Wrap the function that calls your model; the return value is auto-captured.
-const classify = w(async (ticket) => callYourLLM(ticket));
-```
+Keep the complete artifact directory. If an expected OOD guard or reference is
+missing or corrupt, loading fails instead of silently disabling it. Older
+artifacts without final-certification metadata do not gain a certificate by
+being loaded with newer code. See [artifacts](docs/artifacts.md) and
+[troubleshooting](docs/troubleshooting.md).
 
-Full guide: [docs/javascript.md](docs/javascript.md). To route (not just observe) from JS, log traces, fit offline with `tracer.fit()`, run `tracer.serve()` in a Python sidecar, and call it via `fetch`:
+## Documentation
 
-```js
-// 1. Log every LLM classification
-fs.appendFileSync('traces.jsonl', JSON.stringify({ input: text, teacher: label }) + '\n')
-
-// 2. At inference: embed → POST to TRACER → fallback to LLM only if deferred
-let { label, decision } = await fetch('http://localhost:8000/predict', {
-  method: 'POST',
-  body: JSON.stringify({ embedding }),  // same model you used at fit time
-}).then(r => r.json())
-
-if (decision === 'deferred') label = await callYourLLM(text)
-```
-
-See the [JavaScript integration guide](docs/javascript.md) for the full setup including embeddings, docker-compose, batch prediction, and continual learning.
-
-## How it works
-
-```
-User query → [Embedder] → [ML Surrogate] → [Acceptor Gate]
-                                                |          |
-                                            score >= t   score < t
-                                                |          |
-                                          Local answer   Defer to LLM
-                                          (traditional ML)
-```
-
-The surrogate is **not another LLM** - it is a classical ML or shallow DL model. The Python API searches linear, neural, and tree-based candidates. For a lighter sweep, pass `FitConfig(skip_candidates=("dt", "rf", "et", "gbt", "xgb"))` to exclude tree models. Inference runs locally on your CPU.
-
-1. **Fit** - train a suite of candidate surrogates on your LLM's classification traces; select the best via cross-validated teacher agreement
-2. **Gate** - attach a learned acceptor that estimates, per-input, whether the surrogate will agree with the teacher
-3. **Calibrate** - sweep the acceptor threshold to maximise coverage at your target parity (e.g. ≥ 95% teacher agreement)
-4. **Guard** - block deployment if the best candidate cannot clear the parity bar on held-out data
-
-## Benchmark results (Banking77 - 77-class intent classification)
-
-| Metric | Value |
-|--------|-------|
-| Coverage | **92.2%** of traffic handled locally |
-| Teacher agreement (handled) | 96.1% |
-| End-to-end accuracy | 96.4% |
-| **Annual savings** (10k queries/day) | **$302,850** |
-
-_Banking77 is a 77-class task; these results include tree-based candidates. Candidate selection and coverage depend on your data._
-
-## Continual learning flywheel
-
-TRACER is not a one-shot fit. Every deferred input that reaches the LLM produces a new labeled trace, which feeds back into the next refit. As the surrogate sees more of the input distribution, its coverage grows - meaning fewer LLM calls, which in turn cost less, while the quality guarantee holds at every iteration.
-
-```
-Day 1:  2,000 traces → 84% coverage → 1,600 calls/day saved
-Day 3:  6,000 traces → 90% coverage → 9,000 calls/day saved
-Day 5: 10,000 traces → 92% coverage → 9,200 calls/day saved
-```
-
-```python
-tracer.update("new_traces.jsonl", new_embeddings=X_new)  # refit with new production traces
-```
-
-The parity gate re-calibrates on each update, so coverage only increases when the surrogate actually earns it.
-
-## Embedder options
-
-```python
-from tracer import Embedder
-
-embedder = Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")  # local
-embedder = Embedder.from_endpoint("https://api.example.com/embed", headers={...})  # API
-embedder = Embedder.from_callable(my_fn)  # any function
-# or skip the embedder and pass raw np.ndarray embeddings directly
-```
-
-Need to compute embeddings at fit time?
-
-```bash
-pip install tracer-llm[embeddings]   # adds sentence-transformers
-```
-
-```python
-X = tracer.embed(texts)  # default: all-MiniLM-L6-v2 (384-dim)
-```
-
-## Inspect traffic before fitting
-
-`tracer.scan()` groups traces by similarity and estimates the certifiable share
-using held-out bounds. Pass the embeddings that correspond to your trace rows:
-
-```python
-from pathlib import Path
-import tracer
-from tracer.scanner import scan_html
-
-scan = tracer.scan("traces.jsonl", embeddings=X, target=0.95)
-Path("scan.html").write_text(scan_html(scan), encoding="utf-8")
-```
-
-A scan needs at least 1,000 traces; around 5,000 is recommended. Use `force=True`
-only for an explicitly marked thin-data estimate. It does not train a router;
-use `tracer.fit()` for training. See the [scan guide](docs/scan.md).
-
-## What's in `.tracer/`
-
-| File | Contents |
-|------|----------|
-| `manifest.json` | Method, coverage, teacher agreement, label space |
-| `pipeline.joblib` | Surrogate + acceptor + calibrated thresholds |
-| `frontier.json` | All candidates at each quality target |
-| `qualitative_report.json` | Per-label slices, boundary pairs, examples |
-| `report.html` | Visual HTML report |
-
-## Install
-
-```bash
-pip install tracer-llm                # core (numpy + sklearn + joblib)
-pip install tracer-llm[embeddings]    # + sentence-transformers
-pip install tracer-llm[all]           # everything
-```
-
-## Docs
-
-| | |
-|---|---|
-| [Concepts](docs/concepts.md) | Pipeline internals, model zoo, parity gate |
-| [API reference](docs/api.md) | Every function, parameter, and return type |
-| [Scan](docs/scan.md) | Inspect traffic before training |
-| [Watch](docs/watch.md) | Record calls locally and configure generic exports |
-| [JavaScript / Node.js](docs/javascript.md) | Full integration guide for JS pipelines |
-| [Artifacts](docs/artifacts.md) | `.tracer/` directory schema |
-| [Troubleshooting](docs/troubleshooting.md) | `selected_method=null`, coverage drift, embedding-dim mismatch |
-| [AGENTS.md](AGENTS.md) | Integration guide for AI coding assistants |
+| Guide | Contents |
+| --- | --- |
+| [Overview](docs/system1.md) | Teacher/student architecture and scope |
+| [Change log](CHANGELOG.md) | Source changes and release status |
+| [Concepts](docs/concepts.md) | Students, acceptance policies and statistical limits |
+| [API reference](docs/api.md) | Functions, configuration and return types |
+| [Watch](docs/watch.md) | Local recording and optional exports |
+| [Scan](docs/scan.md) | Inspect traffic before fitting |
+| [JavaScript](docs/javascript.md) | Python integration from Node.js |
+| [Artifacts](docs/artifacts.md) | Saved policy layout |
+| [Troubleshooting](docs/troubleshooting.md) | Failed checks, data and embedding problems |
+| [AGENTS.md](AGENTS.md) | Grounded integration instructions for coding assistants |
 
 ## Research
 
