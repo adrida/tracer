@@ -25,6 +25,8 @@ def write_manifest(path: Path, manifest: ArtifactManifest) -> None:
         "index_path": manifest.index_path,
         "config_path": manifest.config_path,
         "qualitative_report_path": manifest.qualitative_report_path,
+        "certification": manifest.certification,
+        "ood_required": manifest.ood_required,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

@@ -16,8 +16,8 @@
  *     JSONL. `OTLPSink` exports spans to an explicitly configured endpoint over
  *     OTLP/HTTP to any OTLP/HTTP backend, zero code change.
  *
- * Zero runtime dependencies (Node stdlib only). Prod-safe: telemetry never
- * throws into, or adds latency to, the host call.
+ * Zero runtime dependencies (Node stdlib only). Telemetry failures are isolated
+ * from the host call; recording and export still add runtime work.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";

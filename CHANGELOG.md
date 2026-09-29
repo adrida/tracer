@@ -5,7 +5,29 @@ versioning.
 
 ## Unreleased
 
+These entries describe repository source. They do not announce a new PyPI or
+npm release; check the installed package version before relying on them.
+
+### Documentation
+- Document direct student predictions, teacher deferral and the OOD guard.
+- Add an [overview](docs/system1.md) covering the teacher/student contract,
+  meaningful quality and cost measurements, free self-hosting, and the boundary
+  between this library and the hosted application's managed features.
+- Clarify that OSS OOD rejection is currently reported as `deferred`, that
+  acceptance scores are not certified per-request probabilities, and that
+  fixed-label fitting does not train a general zero-shot model or its encoder.
+- Correct stale integration examples and unsupported latency, savings and
+  monotonic-coverage claims. Keep historical paper results identified as such.
+
 ### Fixed
+- Make direct `fit()` transactional as well as `update()`: partial reports,
+  indexes, or manifests cannot replace a previously working generation.
+- Fail loading when a present or required OOD guard is unreadable or missing;
+  preserve legacy unguarded artifacts without inventing a certificate.
+- Reserve final certification rows before fitting, label discovery or balancing.
+  Check the selected serving policy, including its development-only OOD guard,
+  once using a one-sided agreement lower bound; never retry other candidates
+  using these outcomes. Zero accepted examples cannot certify a policy.
 - Preserve the previous artifact generation when an update fails validation,
   fitting, or publication. Honor explicit update configuration without mutating
   the caller, retain saved configuration by default, and increment the fit count.
@@ -26,6 +48,15 @@ versioning.
 - Correct update examples to use `new_embeddings=`.
 
 ### Changed (breaking)
+- New fits reserve 20% of rows by default (`certification_fraction`) and use
+  `certification_alpha=0.10`. Small or uncertain fits may now decline deployment.
+  `manifest.certification` records the result; legacy-named `coverage_cal` and
+  `teacher_agreement_cal` now measure this final partition for new artifacts.
+  The confidence statement requires independent representative examples and
+  does not cover distribution shift, correlated sessions, or adaptive reuse.
+- Persist `ood_reference.npy` separately from all embeddings used for updates.
+  Existing artifacts keep their previous behavior unless their guard is broken.
+- Remove unsupported universal coverage, savings and monotonic-growth claims.
 - The prediction server binds to `127.0.0.1` by default and no longer sends a
   wildcard CORS header. Explicitly configure a remote bind address when needed;
   browser deployments should configure CORS at their authenticated proxy.
@@ -85,6 +116,10 @@ versioning.
 
 ## 0.2.0 (2026-06)
 
+Historical release notes. The scan remains a diagnostic; the calibration
+procedure described here is superseded by the independent final-policy check
+in Unreleased. These entries do not establish current deployment guarantees.
+
 ### Added
 - `tracer.scan()`: a fast, conservative day-one read of a traces file, before any
   training. It groups traffic by similarity and measures, on a held-out slice it
@@ -106,11 +141,11 @@ versioning.
   `embeddings=`, or select a local sentence-transformers model with `model=`.
 
 ### Changed
-- The parity gate now certifies on an exact held-out lower bound instead of an
-  in-sample point estimate, so a policy cannot clear the target by in-sample luck
-  and then break the contract on real traffic. Coverage is now monotonic in the
-  target, and a hybrid select-then-verify procedure recovers coverage at strict
-  targets that a plain held-out split discarded.
+- The parity gate introduced held-out lower-bound checks and a hybrid
+  select-then-verify procedure. Later review found that selection and final
+  certification must use separate data; see Unreleased. This historical
+  procedure does not guarantee agreement on future traffic or monotonic
+  coverage across targets.
 - The HTML report is restyled to the light Tracer theme, and the word "audit" is
   dropped across the report and docs.
 

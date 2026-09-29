@@ -1,17 +1,18 @@
-"""tracer.scan(): the day-one verdict on a traces file.
+"""tracer.scan(): a diagnostic for classification traces.
 
 Answers three questions in one pass:
-  1. How much of this traffic is predictable enough for a near-free model?
-     (certifiable share, measured with exact binomial bounds on HELD-OUT
-     data, never in-sample)
-  2. What does that predictable traffic look like? (clusters with dominant
+  1. Which clusters meet a per-cluster teacher-agreement check on held-out
+     examples, using a dominant label learned from the fitting slice?
+  2. What does that traffic look like? (clusters with dominant
      labels and real examples)
-  3. What would that be worth? (savings per 1k calls at your teacher price,
-     extrapolated monthly if you tell us your volume)
+  3. What teacher spend might those requests represent? (a scenario before
+     embedding, student, fallback and serving costs, optionally scaled monthly)
 
 The scan is a diagnostic, deliberately simple: similarity clustering plus
-per-cluster exact confidence bounds. It does not train a router; `fit`
-does that, learning a router with accept gates on the same traffic.
+per-cluster binomial confidence bounds. The selected clusters do not have a
+joint deployment certificate. It does not train a serving router; `fit` trains
+one and separately checks its final policy. Coverage can increase or decrease,
+and a fit may produce no deployable policy.
 
 Usage:
     import tracer
@@ -37,10 +38,9 @@ import numpy as np
 _INPUT_KEYS = ("input", "query", "text", "prompt", "question")
 _LABEL_KEYS = ("teacher", "teacher_output", "label", "intent", "output", "answer")
 
-# Data-volume policy. Below MIN the held-out evidence is too thin for the
-# bounds to mean anything, so a plain scan refuses and points at force=True.
-# SUGGESTED is the volume where cells reliably carry enough held-out members
-# to certify at 0.90 without coarsening.
+# Data-volume guidance. A plain scan refuses below MIN and offers force=True
+# for a diagnostic on limited evidence. SUGGESTED is a collection heuristic,
+# not a promise that any cluster will meet the target.
 MIN_SCAN_TRACES = 1_000
 SUGGESTED_SCAN_TRACES = 5_000
 
@@ -88,6 +88,7 @@ def load_scan_traces(path: Union[str, Path]) -> tuple[list[str], list[str]]:
 
 @dataclass
 class ScanCluster:
+    """Per-cluster evidence; historical `certifiable` is not deployment approval."""
     cluster_id: int
     n_fit: int
     n_held: int
@@ -101,26 +102,32 @@ class ScanCluster:
 
 @dataclass
 class ScanResult:
+    """Scan diagnostics with historical property names retained for compatibility.
+
+    `certifiable_share` and `certified_floor` describe per-cluster checks, not
+    final-policy certification. `savings_per_1k_calls` and `monthly_savings`
+    represent potentially avoided teacher spend before execution overhead.
+    """
     n_traces: int
     n_classes: int
     n_clusters: int
     target: float
-    certifiable_share: float     # held-traffic share inside certified clusters
-    certified_floor: float       # worst certified cluster's bound
+    certifiable_share: float     # held-traffic share in qualifying clusters
+    certified_floor: float       # lowest qualifying cluster's bound
     clusters: list[ScanCluster] = field(default_factory=list)
     # economics (None when no price given)
     teacher_price_per_1k: Optional[float] = None
     savings_per_1k_calls: Optional[float] = None
     monthly_calls: Optional[int] = None
     monthly_savings: Optional[float] = None
-    # certifiable share at a few relaxed targets, so a single 0 at a strict
+    # qualifying share at a few relaxed targets, so a single 0 at a strict
     # target still shows the user where their data sits. {target: share}
     frontier: dict[float, float] = field(default_factory=dict)
     # guidance when data is thin
     traces_needed_estimate: Optional[int] = None
     # True when run with force=True: thin-data guard bypassed, clustering
-    # coarsened to concentrate held-out mass. Bounds are best-effort, not a
-    # guarantee. Surfaced as a warning in the terminal and a report banner.
+    # coarsened to concentrate held-out mass. This changes diagnostic
+    # granularity, not deployment status. Surfaced in both reports.
     forced: bool = False
     # 3D projection for the HTML report viz:
     # {"points": [[x,y,z,cluster_id], ...], "clusters": {cid: {"label","cert"}}}
@@ -161,15 +168,17 @@ def scan(
 ) -> ScanResult:
     """Run the scan. Returns a ScanResult; use format_scan / scan_html to render.
 
-    Certification contract: every certifiable claim is an exact binomial lower
-    bound computed on a held-out 30% slice the clustering never saw.
+    Each cluster's bound uses a held-out 30% slice the clustering never saw.
+    These are individual binomial bounds under independent, representative
+    sampling assumptions, not a simultaneous guarantee for selected clusters
+    or a certificate for a serving policy.
 
     force: on thin data a cluster may not have enough held-out members for any
     bound to clear the target, however clean the traffic actually is. With
     force=True the scan does not change the binomial maths (the bound stays the
     bound), it coarsens the clustering so each cell carries roughly the ~22
-    held-out members a 0.90 target needs, trading granularity for statistical
-    power, and marks the result as forced so the caller can warn loudly.
+    held-out members needed at 0.90 with no observed disagreements, trading
+    granularity for evidence per cluster. This does not ensure a passing check.
     """
     inputs, labels = load_scan_traces(traces_path)
     n = len(inputs)
@@ -180,7 +189,7 @@ def scan(
             f"scan needs at least {MIN_SCAN_TRACES:,} traces for a stable read "
             f"(we suggest ~{SUGGESTED_SCAN_TRACES:,}); this file has {n:,}. "
             f"Collect more, or pass force=True to scan anyway on thin data "
-            f"(results will be a best-effort floor, not a guarantee)."
+            f"(results remain per-cluster diagnostics, not deployment certification)."
         )
 
     if embeddings is None:
@@ -361,30 +370,33 @@ def format_scan(r: ScanResult) -> str:
     pct = r.certifiable_share * 100
 
     L.append("")
-    L.append(f"  {pct:.1f}% of traffic certifiable for a near-free model")
+    L.append("  Trace diagnostic")
+    L.append(f"  {pct:.1f}% of held-out requests lie in qualifying clusters")
     L.append(f"  {r.n_traces:,} traces  ·  {r.n_classes} labels  ·  {r.n_clusters} cells  ·  target {r.target:.0%} agreement")
     L.append(f"  {rule()}")
 
     if r.forced:
         L.append(f"  ⚠  forced scan  thin data: clustering coarsened to concentrate held-out evidence.")
-        L.append(f"     Bounds are a best-effort floor, not a guarantee. Collect more traces or run `tracer.fit()` for the real number.")
+        L.append("     Coarser clusters do not certify a serving policy. Collect representative traces before deployment.")
 
     if r.certifiable_share > 0:
-        L.append(f"  {'worst certified bound':<22}{r.certified_floor:.3f}  exact, held-out")
+        L.append(f"  {'lowest qualifying bound':<26}{r.certified_floor:.3f}  per-cluster, held-out")
     if r.savings_per_1k_calls is not None:
-        L.append(f"  {'savings / 1k calls':<22}${r.savings_per_1k_calls:.2f}  at ${r.teacher_price_per_1k}/1k teacher")
+        L.append(f"  {'teacher spend / 1k calls':<26}${r.savings_per_1k_calls:.2f}  potentially avoided at ${r.teacher_price_per_1k}/1k teacher")
     if r.monthly_savings is not None:
-        L.append(f"  {'monthly savings':<22}${r.monthly_savings:,.0f}  at {r.monthly_calls:,} calls/mo")
+        L.append(f"  {'monthly spend scenario':<26}${r.monthly_savings:,.0f}  at {r.monthly_calls:,} calls/mo")
+    if r.savings_per_1k_calls is not None:
+        L.append("     Before embedding, student, fallback and serving costs; not measured net savings.")
 
     if r.traces_needed_estimate:
         L.append("")
         L.append(f"  ⚠  Not enough held-out evidence yet. Collect roughly "
                  f"{r.traces_needed_estimate:,} more traces and rescan,")
-        L.append(f"     or pass force=True to certify on what you have. Exact bounds need ~22 held-out examples per cell.")
+        L.append("     or pass force=True for a limited-data diagnostic. The collection estimate does not ensure a passing check.")
 
     if r.frontier:
         L.append("")
-        L.append(f"  Certifiable share by target  (lightweight scan estimate)")
+        L.append(f"  Qualifying cluster share by target  (scan diagnostic)")
         L.append(f"  {rule('·')}")
         for tgt in sorted(r.frontier):
             share = r.frontier[tgt]
@@ -393,12 +405,12 @@ def format_scan(r: ScanResult) -> str:
     L.append("")
     L.append(f"  Cells  (top {min(20, len(r.clusters))} by traffic share)")
     L.append(f"  {rule('·')}")
-    L.append(f"  {'share':>6} {'held':>5} {'bound':>6}  verdict   dominant label")
+    L.append(f"  {'share':>6} {'held':>5} {'bound':>6}  check     dominant label")
     for cl in r.clusters[:20]:
         if cl.certifiable:
-            tag = f"✔ free "
+            tag = f"✔ meets"
         else:
-            tag = f"→ keep "
+            tag = f"→ below"
         L.append(f"  {cl.share*100:>5.1f}% {cl.n_held:>5} {cl.cp_lower:>6.3f}  {tag}  {cl.dominant_label[:38]}")
         if cl.examples:
             ex = " ".join(cl.examples[0].split())[:68]
@@ -407,8 +419,10 @@ def format_scan(r: ScanResult) -> str:
         L.append(f"  ... {len(r.clusters) - 20} more cells")
 
     L.append("")
-    L.append(f"  Certifiable = an exact binomial lower bound on held-out label agreement clears your target. No in-sample numbers.")
-    L.append(f"  Next: tracer.fit() trains a real router with accept gates and certifies more on the same traffic.")
+    L.append("  Qualifying = a per-cluster binomial lower bound clears the teacher-agreement target.")
+    L.append("  Historical fields certifiable_share/certified_floor describe this scan, not a deployment certificate.")
+    L.append("  Bounds assume independent, representative examples; they do not jointly certify selected clusters.")
+    L.append("  Next: tracer.fit() trains and checks a serving policy. Its coverage may differ, and deployment may be declined.")
     L.append("")
     return "\n".join(L)
 
@@ -488,7 +502,7 @@ _VIZ_HTML = """ <div class="vizwrap">
      <div class="viztoggle"><span class="vt-cap">Colour by</span><button id="vt-verdict" class="vt on" type="button">Verdict</button><button id="vt-label" class="vt" type="button">Label</button></div>
    </div>
    <div id="viz"><div class="legend" id="vizlegend"></div><div id="cellcard" class="cellcard"></div></div>
-   <p class="vizcap">Drag to rotate, scroll to zoom. Every dot is one request, placed by meaning so similar questions sit together. Switch the colouring to see verdict (free vs kept) or the dominant label of each cell.</p>
+   <p class="vizcap">Drag to rotate, scroll to zoom. Each dot represents a sampled request in a projection of its embedding. Colour shows the per-cluster check or the cluster's dominant label; it does not show deployed routing decisions.</p>
  </div>"""
 
 _VIZ_SCRIPT = """<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -561,7 +575,7 @@ _VIZ_SCRIPT = """<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r1
  function buildLegend(){
    if(!legend){return;}
    if(mode==='verdict'){
-     legend.innerHTML='<span><i style="background:#22c55e"></i>auto-answered, free</span><span><i style="background:#ef4444"></i>stays on your model</span>';
+     legend.innerHTML='<span><i style="background:#22c55e"></i>meets cluster check</span><span><i style="background:#ef4444"></i>below cluster target</span>';
      return;
    }
    // Label mode: one swatch per dominant label, ordered by traffic share.
@@ -586,13 +600,13 @@ _VIZ_SCRIPT = """<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r1
  }
  function showCard(id){
    var cl=C[id]; if(!cl){card.className='cellcard';return;}
-   var safe=!!cl.cert, pc=safe?'#22c55e':'#ef4444', pt=safe?'Auto-answer, free':'Keep on your model';
+   var safe=!!cl.cert, pc=safe?'#22c55e':'#ef4444', pt=safe?'Meets cluster check':'Below cluster target';
    var share=(cl.share!=null)?(cl.share*100).toFixed(1)+'%':'';
    var bound=(cl.bound!=null)?Math.round(cl.bound*100)+'%':'';
    var ex=(cl.ex||[]).map(function(s){return '<div class="q">&ldquo;'+esc(s)+'&rdquo;</div>';}).join('');
    card.innerHTML='<span class="cc-pill" style="background:'+pc+'26;color:'+pc+'">'+pt+'</span>'+
      '<div class="cc-label">'+esc(cl.label||'')+'</div>'+
-     '<div class="cc-stats"><span>traffic <b>'+share+'</b></span><span>match rate <b>'+bound+'</b></span></div>'+
+     '<div class="cc-stats"><span>held-out share <b>'+share+'</b></span><span>lower bound <b>'+bound+'</b></span></div>'+
      (ex?('<div class="cc-ex"><div class="cc-ex-h">sounds like</div>'+ex+'</div>'):'');
    card.className='cellcard on';
  }
@@ -647,7 +661,7 @@ _TEXTTIP_SCRIPT = """<script>
 
 
 def scan_html(r: ScanResult, source_name: str = "traces") -> str:
-    """Self-contained, brand-styled HTML report with a 3D embedding view."""
+    """Render scan evidence as HTML; the optional 3D view loads external scripts."""
     import json as _json
     GREEN, RED = "#16a34a", "#dc2626"
     pct = r.certifiable_share * 100
@@ -655,7 +669,7 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
     rows = []
     for c in r.clusters:
         color = GREEN if c.certifiable else RED
-        verdict = "Auto-answer, free" if c.certifiable else "Keep on your model"
+        verdict = "Meets cluster check" if c.certifiable else "Below cluster target"
         exs = "".join(
             f"<div class='ex' data-full=\"{_esc(e)}\">&ldquo;{_esc(e[:120])}{'…' if len(e) > 120 else ''}&rdquo;</div>"
             for e in c.examples[:2]
@@ -669,20 +683,21 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 
     money = ""
     if r.savings_per_1k_calls is not None:
-        money = f"<b>${r.savings_per_1k_calls:.2f}</b> saved per 1,000 calls"
+        money = f"Teacher spend potentially avoided: <b>${r.savings_per_1k_calls:.2f}</b> per 1,000 calls"
         if r.monthly_savings is not None:
-            money += f" &middot; about <b>${r.monthly_savings:,.0f}/month</b> at {r.monthly_calls:,} calls"
+            money += f" &middot; <b>${r.monthly_savings:,.0f}/month</b> at {r.monthly_calls:,} calls"
+        money += "<br><small>Scenario before embedding, student, fallback and serving costs. Actual net savings require a deployed-policy evaluation.</small>"
 
     thin = ""
     if r.traces_needed_estimate:
-        thin = (f"<div class='note warn'>Not enough data yet to prove much. Collect about "
+        thin = (f"<div class='note warn'>Limited held-out evidence. The collection heuristic suggests about "
                 f"<b>{r.traces_needed_estimate:,} more requests</b> and run this again. "
-                f"Each group needs roughly 22 held-out examples before we can vouch for it.</div>")
+                f"This estimate does not ensure that any cluster will pass its check.</div>")
     if r.forced:
         thin = ("<div class='note warn'><b>Forced scan on limited data.</b> The grouping was "
-                "coarsened to squeeze the most evidence out of a small sample, so every number "
-                "below is a best-effort floor, not a guarantee. Collect more requests, or run "
-                "<code>tracer.fit()</code>, for a number you can quote.</div>")
+                "coarsened to increase evidence per cluster. Results are diagnostics on limited "
+                "data, not deployment certification. Collect representative requests and inspect "
+                "the final policy check after <code>tracer.fit()</code>.</div>")
 
     has_viz = bool(r.projection and r.projection.get("points"))
     viz_block = _VIZ_HTML if has_viz else ""
@@ -700,24 +715,24 @@ def scan_html(r: ScanResult, source_name: str = "traces") -> str:
 <style>{_SCAN_CSS}</style></head>
 <body>
  <a class="logo" href="https://github.com/adrida/tracer" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>Tracer scan <span class="src">&middot; {_esc(source_name)}</span></a>
- <h1><span class="u">{pct:.0f}%</span> of your traffic can be answered for free</h1>
- <p class="sub">A near-free model already matches your current model on {pct:.0f}% of requests, proven on held-out examples, not guessed.</p>
+ <h1>Trace diagnostic</h1>
+ <p class="sub"><span class="u">{pct:.0f}%</span> of held-out requests fall in clusters that meet the per-cluster teacher-agreement check.</p>
  <p class="meta">{r.n_traces:,} requests &middot; {r.n_clusters} groups of similar questions &middot; target {r.target:.0%} agreement</p>
- <a href="#run-fit" class="top-cta">Train the real router with <code>tracer.fit()</code> &rarr;</a>
+ <a href="#run-fit" class="top-cta">Train and evaluate with <code>tracer.fit()</code> &rarr;</a>
  {save_html}
  {thin}
- <div class="note"><b>How to read this.</b> We grouped your requests into clusters of similar questions and laid them out in the space below. For each cluster we checked, on examples it never saw, how often a tiny free model agrees with your model. <b style="color:#16a34a">Green</b> means it agrees at least {r.target:.0%} of the time, so it is safe to auto-answer for free. <b style="color:#dc2626">Red</b> means we could not prove that yet, so those stay on your model.</div>
+ <div class="note"><b>How to read this.</b> Clusters and their dominant labels come from the fitting slice. On held-out examples, we measure how often each cluster's dominant label matches the teacher. <b style="color:#16a34a">Green</b> means that cluster's binomial lower bound meets the {r.target:.0%} target. <b style="color:#dc2626">Red</b> means it does not. The scan is a data diagnostic, not a serving policy or deployment certificate.</div>
  {viz_block}
  <table>
-  <tr><th>What customers ask</th><th style="text-align:right">Share of traffic</th><th style="text-align:right">Match rate <span class="hint">(proven)</span></th><th>Verdict</th></tr>
+  <tr><th>Dominant label and examples</th><th style="text-align:right">Held-out share</th><th style="text-align:right">Agreement lower bound <span class="hint">(per cluster)</span></th><th>Check</th></tr>
   {''.join(rows)}
  </table>
  <div class="scan-cta" id="run-fit">
-   <h3>This is a fast, conservative estimate. Train the real router for more.</h3>
-   <p>This 2-minute scan groups your traffic by similarity, a deliberately conservative read, so the real number is usually higher. <code>tracer.fit()</code> trains the actual router with accept gates and certifies a larger share of the same traffic.</p>
+   <h3>Next, train and check the serving policy.</h3>
+   <p><code>tracer.fit()</code> trains a classifier and acceptance policy, then checks the selected policy, including its OOD filter, on a separate final partition. Its coverage may be higher or lower than this scan, and insufficient evidence can prevent deployment.</p>
    <p><code>pip install tracer-llm</code> &nbsp;then&nbsp; <code>tracer.fit(&quot;your_traces.jsonl&quot;, embeddings=X)</code></p>
  </div>
- <footer>Every number here is an exact lower bound measured on held-out data the grouping never saw, no in-sample optimism.
+ <footer>Individual cluster bounds assume independent, representative examples. They are not a simultaneous certificate for the selected clusters and do not cover distribution shift. Historical fields <code>certifiable_share</code> and <code>certified_floor</code> retain their names for compatibility; the scan does not certify deployment.
    <span class="foot-brand"><a href="https://github.com/adrida/tracer" target="_blank" rel="noopener"><span class="dots"><i style="background:#0ea5e9"></i><i style="background:#f97316"></i><i style="background:#dc2626"></i></span>TRACER on GitHub</a></span></footer>
  <div id="texttip" class="texttip"></div>
  {script}

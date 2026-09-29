@@ -94,18 +94,22 @@ def test_faiss_fit_reload_preserves_embedding_scale(tmp_path):
     np.testing.assert_array_equal(X, original)
     np.testing.assert_array_equal(EmbeddingIndex.load(tmp_path / 'model' / 'index').embeddings, original)
     router = load_router(tmp_path / 'model')
-    assert result.manifest.coverage_cal == 1
-    assert not router._ood_flags(original, y).any()
-    assert router.predict_batch(original)['handled'].all()
+    assert result.manifest.certification['teacher_agreement_lower'] >= .9
+    # The reserved rows are no longer in the OOD reference; a small number of
+    # distant but in-distribution examples may correctly be deferred.
+    assert router.predict_batch(original)['handled'].mean() > .9
 
 
 def test_fit_report_keeps_deferred_confidence(tmp_path, monkeypatch):
     # The lazy-import test reloads the package; patch the function used below.
     from tracer.api import fit
 
-    X = np.array([[-3.], [-1.], [-.1], [.1], [1.], [3.]], dtype=np.float32)
-    y = np.array([0, 0, 0, 1, 1, 1])
-    clf = LogisticRegression().fit(X, y)
+    base_X = np.array([[-3.], [-1.], [-.1], [.1], [1.], [3.]], dtype=np.float32)
+    base_y = np.array([0, 0, 0, 1, 1, 1])
+    clf = LogisticRegression().fit(base_X, base_y)
+    # Enough accepted certification rows; the old six-row fixture cannot
+    # support a 90% agreement lower bound regardless of observed accuracy.
+    X, y = np.tile(base_X, (100, 1)), np.tile(base_y, 100)
     stage = {'clf': clf, 'accept_all': False, 'acceptor': None, 'threshold': .9}
     best = {'stages': [stage], 'summary': {'method': 'l2d', 'coverage_cal_total': .3,
                                           'teacher_agreement_cal_total': 1}}

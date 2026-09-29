@@ -64,7 +64,7 @@ class Router:
             raise ValueError(
                 f"No router is deployed in {artifact_dir}: the parity gate did not "
                 "certify any method (selected_method is null in manifest.json). "
-                "Run tracer.fit() again with more data or a lower target_teacher_agreement."
+                "Inspect manifest.certification and collect more representative data before refitting."
             )
         bundle = load_pipeline(artifact_dir)
         stages = bundle["pipeline"]["stages"]
@@ -74,13 +74,22 @@ class Router:
         ood_gate = None
         train_emb = None
         ood_path = artifact_dir / "ood.json"
+        if manifest.ood_required and not ood_path.exists():
+            raise ValueError(f"Required OOD guard is missing: {ood_path}")
         if ood_path.exists():
             try:
                 ood_gate = _json.loads(ood_path.read_text())
-                from tracer.embeddings.index import EmbeddingIndex
-                train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
-            except Exception:
-                ood_gate, train_emb = None, None
+                reference = artifact_dir / "ood_reference.npy"
+                if reference.exists() or manifest.ood_required:
+                    train_emb = np.load(reference, allow_pickle=False)
+                else:
+                    # Legacy policies used all stored embeddings as reference.
+                    # Preserve their behavior; do not invent certification.
+                    from tracer.embeddings.index import EmbeddingIndex
+                    train_emb = EmbeddingIndex.load(artifact_dir / "index").embeddings
+                _validate_ood(ood_gate, train_emb, manifest.embedding_dim)
+            except Exception as exc:
+                raise ValueError(f"Cannot load the OOD guard from {artifact_dir}; refusing unguarded routing") from exc
         return cls(stages=stages, label_space=label_space, manifest=manifest,
                    embedder=embedder, ood_gate=ood_gate, train_embeddings=train_emb)
 
@@ -206,3 +215,23 @@ class Router:
                 decisions.append("deferred")
         return {"labels": labels, "decisions": decisions,
                 "handled": handled, "preds": preds, "stage_id": stage_id}
+
+
+def _validate_ood(gate, reference, expected_dim):
+    """Reject malformed artifacts rather than turning a safety check off."""
+    if not isinstance(gate, dict):
+        raise ValueError("OOD metadata must be an object")
+    k = gate.get("k")
+    if isinstance(k, bool) or not isinstance(k, int) or k < 1:
+        raise ValueError("OOD neighbor count must be a positive integer")
+    X = np.asarray(reference)
+    if (X.ndim != 2 or len(X) < k or X.shape[1] == 0
+            or (expected_dim is not None and X.shape[1] != expected_dim)
+            or not np.isfinite(X).all()):
+        raise ValueError("OOD reference embeddings are invalid")
+    per_label = gate.get("per_label_thr", {})
+    if not isinstance(per_label, dict):
+        raise ValueError("OOD per-label thresholds must be an object")
+    thresholds = [gate["global_thr"], *per_label.values()]
+    if any(not np.isfinite(float(t)) or float(t) < 0 for t in thresholds):
+        raise ValueError("OOD distance thresholds must be finite and nonnegative")

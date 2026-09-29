@@ -1,7 +1,8 @@
-"""TRACER -- Trace-Based Adaptive Cost-Efficient Routing.
+"""TRACER -- classification from teacher traces.
 
-Turn LLM traces into parity-gated routing policies that progressively
-replace teacher calls -- with formal guarantees and qualitative audit.
+Train a task-specific student to predict labels directly, with teacher deferral
+and an OOD guard. Final teacher-agreement checks assume representative,
+independent examples. TRACER: Trace-Based Adaptive Cost-Efficient Routing.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from tracer.watch import GenAISpan, Watcher, watch  # noqa: E402
 
 # Lazy public API (PEP 562). The heavy ML stack (numpy / scikit-learn /
 # hdbscan / sentence-transformers) is only imported on first attribute access,
-# so `import tracer` and local trace recording start instantly instead of
-# paying multi-second import cost up front.
+# so `import tracer` and local trace recording avoid loading the ML stack
+# until it is needed.
 #
 # `fit` also collides with the tracer.fit subpackage, so it cannot be healed by
 # __getattr__ alone (the submodule attribute shadows it). tracer.api re-asserts

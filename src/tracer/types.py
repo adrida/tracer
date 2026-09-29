@@ -101,6 +101,10 @@ class ArtifactManifest:
     index_path: Optional[str] = None
     config_path: Optional[str] = None
     qualitative_report_path: Optional[str] = None
+    # Older artifacts have no final certification; do not infer one from the
+    # legacy calibration fields when loading them.
+    certification: Optional[Dict[str, Any]] = None
+    ood_required: bool = False
 
 
 @dataclass

@@ -1,93 +1,104 @@
 # Troubleshooting
 
-Three snags people hit most often, what causes them, and how to fix each.
+TRACER's student returns fixed labels directly when its policy accepts them.
+Otherwise your application retains its teacher path. These diagnostics concern
+that policy; an acceptance score is not a certified correctness probability.
+See [concepts](concepts.md) and [the API contract](api.md).
 
-## `selected_method` is `null` (no policy deployed)
+## `selected_method` is `null`
 
-**Symptom.** After `tracer.fit(...)`, the manifest shows `selected_method: null`,
-the `FitResult` notes say "No deployable pipeline met the target teacher-parity
-threshold", and `tracer.load_router(...)` then raises `FileNotFoundError` on
-`pipeline.joblib` (the file is only written when a policy actually deploys).
-The server started with `tracer.serve()` reports `method=none` on `/health`.
+**Symptom:** `fit()` or `update()` returns a manifest with no selected method.
+`load_router()` raises `ValueError`; `serve()` fails during loading, before its
+HTTP server starts. There is no functioning `/health` endpoint for that policy.
 
-**Why.** TRACER only deploys a surrogate that can hold your parity bar. If no
-candidate reaches `target_teacher_agreement` while still covering at least
-`min_deploy_coverage` of traffic, nothing is deployed on purpose, rather than
-shipping a policy that silently disagrees with your teacher.
+**Meaning:** no candidate was selected, or the fixed policy failed its final
+teacher-agreement/coverage check. A policy can fail with no observed mistakes
+when too few reserved examples were accepted. The target bounds agreement with
+the teacher, not independent ground-truth accuracy.
 
-Common reasons:
+1. Inspect `result.manifest.certification` and `result.notes` for the exact
+   status, accepted counts, observed agreement and lower bound.
+2. Use `frontier.json` to understand development selection. Its scores are not
+   final certification or proof of the best achievable production result.
+3. Audit labels and collect representative independent examples. Check whether
+   the representation separates the labels your application needs.
+4. Keep using the teacher. Do not repeatedly change thresholds or random seeds
+   against the reserved outcomes to obtain a passing certificate. A different
+   quality requirement is an application decision, not a repair for failure.
 
-- `target_teacher_agreement` set too high for the data (for example 0.99 on
-  noisy teacher labels).
-- `min_deploy_coverage` set so high that the only parity-respecting policies are
-  filtered out.
-- Too few traces, or embeddings that do not separate the classes.
-- Heavy teacher label noise, which caps the agreement any surrogate can reach.
+A completed null-policy fit **replaces** the selected directory's generation;
+it is different from an exception, which preserves the preceding generation.
+To review a candidate before promoting it, fit to a separate directory:
 
-**Fix.**
+```python
+import tracer
 
-1. Open `.tracer/frontier.json`. Each entry lists `best_coverage` and `best_ta`
-   per target. This tells you the best parity actually achievable and at what
-   coverage, so you can pick a realistic bar instead of guessing.
-2. Lower the bar to something the frontier shows is reachable:
-   ```python
-   tracer.fit("traces.jsonl", embeddings=X,
-              config=tracer.FitConfig(target_teacher_agreement=0.90,
-                                      min_deploy_coverage=0.02))
-   ```
-3. Add more traces, or improve the embedding model so classes separate better.
-4. If `best_ta` is capped well below your target across all candidates, suspect
-   teacher label noise and audit the traces before re-fitting.
+candidate = tracer.fit("traces.jsonl", artifact_dir=".tracer-candidate", embeddings=X)
+print(candidate.manifest.certification)
+# Switch your application's configured directory only after your review/evals.
+```
 
 ## Coverage drops between fits
 
-**Symptom.** A re-fit (`tracer.update(...)`, or `tracer.fit` on a larger trace
-set) reports a lower `coverage_cal` than the previous run at the same
-`target_teacher_agreement`.
+A lower accepted fraction can reflect harder traffic, changed label proportions,
+sampling variation, different selected models, or a regression. It is not by
+itself proof that the system adapted correctly or that quality was preserved.
 
-**Why.** This is expected, not a regression. TRACER holds parity fixed and lets
-coverage float. When new traffic is harder, more diverse, noisier, or introduces
-labels the surrogate has not seen, the only way to keep matching the teacher at
-your target is to defer more inputs. Coverage falls so that the parity bound still holds.
+Compare old and new policies on the same external session/time holdout. Report
+coverage and accepted agreement together; if independent reference labels are
+available, also measure direct accuracy and per-class/worst-group failures.
+Use the qualitative report and its per-label `temporal_deltas` for diagnosis,
+not as an independent quality estimate. Record a representative sample of all
+traffic: training only on the old policy's deferrals changes the distribution.
 
-**Fix.** Usually nothing: a lower coverage at the same parity is the system
-adapting correctly. To understand the change:
+Updates refit and recheck a policy; there is no promised coverage improvement or
+automatic production retraining schedule in the OSS package.
 
-- Check `.tracer/frontier.json` to see the new coverage versus parity curve.
-- Read the qualitative report (`.tracer/qualitative_report.json`). Its
-  `temporal_deltas` show, per label, how the handled rate moved between fits, so
-  you can see which slices got harder.
-- If new labels expanded the space, that alone can lower coverage; confirm the
-  label count grew.
-- If cost matters more than parity for the new traffic, lower
-  `target_teacher_agreement` to trade some agreement back for coverage.
+## Embedding dimension mismatch or unexpected behavior
 
-## Embedding dimension mismatch
-
-**Symptom.**
-```
+```text
 ValueError: Embedding dimension mismatch: expected 384, got 768.
 ```
-raised from `router.predict(...)` / `router.predict_batch(...)`, or surfaced as
-a `500` from the server's `/predict` endpoint.
 
-**Why.** The router records the embedding width it was fitted on in
-`manifest.embedding_dim` and checks every incoming vector against it. A mismatch
-means the embeddings at route time were produced differently from the ones used
-at fit time, almost always a different embedder model.
+`predict()` and `predict_batch()` check width against `manifest.embedding_dim`.
+The HTTP server returns **400**, not 500, for this input error. Use the exact
+same encoder, revision, preprocessing and normalization as during fitting.
+Two encoders can share a dimension and still be incompatible; dimension checks
+do not validate model identity.
 
-**Fix.** Use the same embedder at fit time and route time.
+```python
+embedder = tracer.Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
+router = tracer.load_router(".tracer", embedder=embedder)  # only if fitted with this encoder
+```
 
-- If you fit on precomputed embeddings, route with the same model that produced
-  them. `all-MiniLM-L6-v2` and `BAAI/bge-small-en-v1.5` are 384-dim, while
-  `BAAI/bge-base-en-v1.5` is 768-dim; fitting on one width and routing on the
-  other triggers this error.
-  ```python
-  embedder = tracer.Embedder.from_sentence_transformers("BAAI/bge-small-en-v1.5")
-  router = tracer.load_router(".tracer", embedder=embedder)  # same model as fit
-  ```
-- For the HTTP server, the vector in `{"embedding": [...]}` must have exactly
-  `manifest.embedding_dim` values. Check `GET /health` and the manifest if you
-  are unsure of the expected width.
-- A dimension match with poor accuracy is a different problem: make sure the
-  `normalize` setting also matches between fit and route.
+The HTTP interface takes `{"embedding": [...]}`, not raw text. It does not
+compute embeddings or call your fallback. Read the dimension from the manifest;
+`GET /health` does not expose it. `Embedder.from_endpoint()` uses literal
+top-level response keys, so `"data.0.embedding"` is not a nested-path adapter.
+Use `from_callable()` to transform a provider's nested response.
+
+## A request is deferred, including an unfamiliar input
+
+Ordinary acceptance rejection and the OOD distance guard both return
+`decision="deferred"`. There is no separate public OOD-reason field.
+Without a supplied fallback, the result has `label=None`. With one, its return
+value becomes the label but the decision stays `"deferred"`. An OOD guard is a
+heuristic distance check, not a guarantee that all wrong inputs are detected.
+
+Batch results have `None` for deferred labels and never run a teacher. Ignore
+internal `preds` where `handled` is false. Calling a fallback does not establish
+that its answer is correct; evaluate its outputs separately when reporting
+end-to-end quality.
+
+## A saved policy no longer loads
+
+A missing or unreadable declared OOD guard fails loading instead of silently
+disabling it. Restore the matching complete artifact generation; do not delete
+the guard to make loading succeed. Legacy artifacts without final evidence do
+not become certified when reloaded.
+
+`update()` needs `all_traces.jsonl` and its aligned saved embeddings. If either
+is lost, reconstruct from your source records and refit; embeddings alone cannot
+recover teacher labels. Use one artifact writer at a time, keep enough disk
+space for staged generations, and reload readers after publication finishes.
+See [artifacts](artifacts.md).

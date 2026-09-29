@@ -26,6 +26,7 @@ from tracer.embeddings.index import EmbeddingIndex
 from tracer.fit.pipeline import (
     evaluate_pipeline, fit_frontier, route_pipeline, apply_stage, _accept_scores, _predict,
 )
+from tracer.fit.certification import certification_split, certify_policy
 from tracer.policy.artifacts import (
     load_manifest, load_pipeline, save_pipeline, save_qualitative_report, write_manifest,
 )
@@ -37,6 +38,70 @@ from tracer.types import ArtifactManifest, FitResult, QualitativeReport
 def fit(
     trace_path: Union[str, Path],
     artifact_dir: Union[str, Path] = ".tracer",
+    embeddings: Optional[np.ndarray] = None,
+    config: Optional[FitConfig] = None,
+) -> FitResult:
+    """Fit and publish a complete artifact generation.
+
+    A fitting or publication exception preserves the existing generation.
+    A completed noncertifying fit publishes a nondeployable manifest instead.
+    Use one writer per artifact directory and reload readers after return;
+    fit to a separate directory to evaluate a replacement before promotion.
+    """
+    artifact_dir = Path(artifact_dir)
+    artifact_dir.absolute().parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{artifact_dir.name}-fit-",
+                                     dir=artifact_dir.absolute().parent) as temp:
+        root = Path(temp)
+        staged = root / "next"
+        if artifact_dir.exists():
+            shutil.copytree(artifact_dir, staged)
+        else:
+            staged.mkdir()
+        _clear_model_artifacts(staged)
+        result = _fit_artifacts(trace_path, staged, embeddings, config)
+        result.artifact_dir = str(artifact_dir)
+        for field_name in ("pipeline_path", "index_path", "config_path", "qualitative_report_path"):
+            path = getattr(result.manifest, field_name)
+            if path is not None:
+                setattr(result.manifest, field_name, str(artifact_dir / Path(path).relative_to(staged)))
+        write_manifest(staged / "manifest.json", result.manifest)
+        _publish_generation(staged, artifact_dir, root, result.notes)
+    return result
+
+
+def _clear_model_artifacts(directory):
+    for filename in ("pipeline.joblib", "qualitative_report.json", "ood.json",
+                     "ood_reference.npy", "index.faiss", "report.html", "sankey.html"):
+        (directory / filename).unlink(missing_ok=True)
+
+
+def _publish_generation(staged, artifact_dir, root, notes):
+    # The backup is outside the temporary root: a failed rollback must not
+    # cause TemporaryDirectory cleanup to discard the previous generation.
+    backup = root.with_name(root.name + "-previous")
+    had_previous = artifact_dir.exists()
+    if had_previous:
+        artifact_dir.rename(backup)
+    try:
+        staged.rename(artifact_dir)
+    except BaseException:
+        if had_previous:
+            try:
+                backup.rename(artifact_dir)
+            except OSError as exc:
+                raise RuntimeError(f"Previous artifacts are preserved at {backup}; restore them before retrying") from exc
+        raise
+    if had_previous:
+        try:
+            shutil.rmtree(backup)
+        except OSError:
+            notes.append(f"Fit completed; previous artifact backup retained at {backup}")
+
+
+def _fit_artifacts(
+    trace_path: Union[str, Path],
+    artifact_dir: Union[str, Path],
     embeddings: Optional[np.ndarray] = None,
     config: Optional[FitConfig] = None,
 ) -> FitResult:
@@ -61,8 +126,6 @@ def fit(
     notes = []
 
     dataset = load_traces(trace_path)
-    labels = sorted(dataset.label_space)
-    label_to_idx = {l: i for i, l in enumerate(labels)}
 
     # Resolve embeddings
     if embeddings is None:
@@ -77,7 +140,13 @@ def fit(
                 f"No embeddings found. Pass embeddings= or place a .npy file at {emb_path}")
 
     X = _embedding_matrix(embeddings, len(dataset))
-    y_teacher = np.array([label_to_idx[r.teacher_label] for r in dataset.records], dtype=int)
+    # Even label discovery must not inspect reserved outcomes: a class seen
+    # only there is an unknown label and counts as a mismatch if accepted.
+    development, certification_rows = certification_split(
+        len(X), config.certification_fraction, config.seed)
+    labels = sorted({dataset.records[i].teacher_label for i in development})
+    label_to_idx = {l: i for i, l in enumerate(labels)}
+    y_teacher = np.array([label_to_idx.get(r.teacher_label, -1) for r in dataset.records], dtype=int)
     y_true = None
     has_gt = all(r.ground_truth is not None for r in dataset.records)
     if has_gt:
@@ -87,7 +156,11 @@ def fit(
             y_true = None
             has_gt = False
 
-    # Fit frontier
+    # Reserve final certification before any label balancing or fitting. The
+    # candidate-selection code never sees these rows or their outcomes.
+    X_dev, y_dev = X[development], y_teacher[development]
+
+    # Fit candidate frontier using development data only.
     targets = list(config.frontier_targets)
     if config.target_teacher_agreement not in targets:
         targets.append(config.target_teacher_agreement)
@@ -99,7 +172,7 @@ def fit(
             elapsed = time.perf_counter() - _t0
             print(f"[tracer.fit +{elapsed:6.1f}s] {msg}", file=sys.stderr, flush=True)
 
-    frontier, split = fit_frontier(X, y_teacher, targets,
+    frontier, split = fit_frontier(X_dev, y_dev, targets,
                                    max_fit_labels=config.max_fit_labels,
                                    min_coverage=config.min_deploy_coverage,
                                    log=log_fn, skip=config.skip_candidates, seed=config.seed)
@@ -117,18 +190,49 @@ def fit(
     ta_cal = None
     qual_report = None
     qual_path = None
+    certificate = {"status": "no_candidate", "n_examples": len(certification_rows),
+                   "alpha": config.certification_alpha,
+                   "target": config.target_teacher_agreement}
+    serving_router = None
+    ood_gate = None
 
     if selected and selected["best"] and selected["best"]["stages"]:
+        # Freeze all policy choices, including OOD, before looking at the
+        # reserved outcomes. There is no fallback to another candidate if this
+        # one fails final certification.
+        best = selected["best"]
+        from tracer.fit.ood import fit_ood_gate
+        from types import SimpleNamespace
+        dev_preds, _, _ = route_pipeline(best["stages"], X_dev)
+        pred_label_strs = [labels[int(p)] if p >= 0 else "?" for p in dev_preds]
+        ood_gate = fit_ood_gate(X_dev, pred_label_strs)
+        serving_router = Router(best["stages"], labels,
+                                SimpleNamespace(embedding_dim=X.shape[1]),
+                                ood_gate=ood_gate,
+                                train_embeddings=X_dev if ood_gate is not None else None)
+        certificate = certify_policy(serving_router, X[certification_rows],
+                                     y_teacher[certification_rows],
+                                     config.target_teacher_agreement,
+                                     config.certification_alpha)
+        if (certificate["status"] == "certified"
+                and certificate["coverage"] < config.min_deploy_coverage):
+            certificate["status"] = "below_min_coverage"
+
+    if certificate["status"] == "certified":
         best = selected["best"]
         method = best["summary"]["method"]
-        cov_cal = best["summary"].get("coverage_cal_total")
-        ta_cal = best["summary"].get("teacher_agreement_cal_total")
+        # Legacy field names retained; values now measure the exact serving
+        # policy on untouched certification data, not selection calibration.
+        cov_cal = certificate["coverage"]
+        ta_cal = certificate["teacher_agreement"]
         pipeline_path = save_pipeline(artifact_dir, best, labels)
         notes.append(f"Deployed {method} at target TA={config.target_teacher_agreement:.2f}, "
                      f"coverage={cov_cal:.1%}, TA={ta_cal:.3f}")
 
-        # Build qualitative report
-        preds, handled, stage_id = route_pipeline(best["stages"], X)
+        # Descriptive report over supplied traces, using the exact runtime
+        # policy. This report is not an independent performance evaluation.
+        routed = serving_router.predict_batch(X)
+        preds, handled, stage_id = routed["preds"], routed["handled"], routed["stage_id"]
         texts = [r.input_text for r in dataset.records]
         teacher_labels_str = [r.teacher_label for r in dataset.records]
         idx_to_label = {i: l for i, l in enumerate(labels)}
@@ -152,22 +256,11 @@ def fit(
             trace_ids=[r.trace_id for r in dataset.records])
         qual_path = save_qualitative_report(artifact_dir, qual_report)
 
-        # Distance-based OOD gate: calibrate kNN-distance thresholds (global +
-        # per predicted label) so the runtime can defer off-distribution inputs
-        # the parity gate never saw. Safety net, not the partition.
-        try:
-            from tracer.fit.ood import fit_ood_gate
-            pred_label_strs = [idx_to_label.get(int(p), "?") for p in preds]
-            ood_gate = fit_ood_gate(X, pred_label_strs)
-            if ood_gate is not None:
-                (artifact_dir / "ood.json").write_text(json.dumps(ood_gate))
-                notes.append(
-                    f"OOD gate calibrated (kNN dist, global thr={ood_gate['global_thr']:.3f}, "
-                    f"{len(ood_gate['per_label_thr'])} per-label)")
-        except Exception as _e:  # never let the safety net break a fit
-            notes.append(f"OOD gate skipped: {_e}")
+        if ood_gate is not None:
+            (artifact_dir / "ood.json").write_text(json.dumps(ood_gate))
+            np.save(artifact_dir / "ood_reference.npy", X_dev)
     else:
-        notes.append("No deployable pipeline met the target teacher-parity threshold.")
+        notes.append(f"No deployable pipeline met the final teacher-agreement check: {certificate['status']}.")
 
     # Save traces for continual learning (update needs them)
     from tracer.traces.loader import save_traces
@@ -189,6 +282,7 @@ def fit(
     for item in frontier:
         frontier_summary.append({
             "target": item["target"],
+            "evaluation_role": "development_selection_only",
             "best_method": item["best"]["summary"]["method"] if item["best"] else None,
             "best_coverage": item["best"]["summary"].get("coverage_cal_total") if item["best"] else None,
             "best_ta": item["best"]["summary"].get("teacher_agreement_cal_total") if item["best"] else None,
@@ -204,7 +298,9 @@ def fit(
         embedding_dim=X.shape[1], n_retrains=1,
         pipeline_path=pipeline_path, index_path=str(index_path),
         config_path=str(config_path),
-        qualitative_report_path=qual_path)
+        qualitative_report_path=qual_path,
+        certification=certificate,
+        ood_required=method is not None and ood_gate is not None)
     write_manifest(artifact_dir / "manifest.json", manifest)
 
     return FitResult(
@@ -297,12 +393,10 @@ def update(
         staged = root / "next"
         shutil.copytree(artifact_dir, staged)
         # A refit must not inherit reports or gates from the previous model.
-        for filename in ("pipeline.joblib", "qualitative_report.json", "ood.json",
-                         "index.faiss", "report.html", "sankey.html"):
-            (staged / filename).unlink(missing_ok=True)
+        _clear_model_artifacts(staged)
         combined_path = root / "combined.jsonl"
         save_traces(combined_ds, combined_path)
-        result = fit(combined_path, staged, embeddings=X_combined, config=config)
+        result = _fit_artifacts(combined_path, staged, embeddings=X_combined, config=config)
         result.artifact_dir = str(artifact_dir)
         result.manifest.n_retrains = manifest.n_retrains + 1
         for field_name in ("pipeline_path", "index_path", "config_path", "qualitative_report_path"):
@@ -310,21 +404,7 @@ def update(
             if path is not None:
                 setattr(result.manifest, field_name, str(artifact_dir / Path(path).relative_to(staged)))
         write_manifest(staged / "manifest.json", result.manifest)
-        # Outside the staging directory so a failed rollback cannot discard it.
-        backup = root.with_name(root.name + "-previous")
-        artifact_dir.rename(backup)
-        try:
-            staged.rename(artifact_dir)
-        except BaseException:
-            try:
-                backup.rename(artifact_dir)
-            except OSError as exc:
-                raise RuntimeError(f"Previous artifacts are preserved at {backup}; restore them before retrying") from exc
-            raise
-        try:
-            shutil.rmtree(backup)
-        except OSError:
-            result.notes.append(f"Update completed; previous artifact backup retained at {backup}")
+        _publish_generation(staged, artifact_dir, root, result.notes)
     return result
 
 
