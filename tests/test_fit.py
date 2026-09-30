@@ -99,6 +99,20 @@ def test_load_traces_missing_fields_raises():
             load_traces(path)
 
 
+def test_load_traces_null_teacher_reports_file_line():
+    """The null-teacher error must name the real file line, not the record count."""
+    from tracer.traces.loader import load_traces
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "null_teacher.jsonl"
+        with path.open("w") as f:
+            f.write(json.dumps({"input": "a", "teacher": "x"}) + "\n")
+            f.write("\n")
+            f.write("\n")
+            f.write(json.dumps({"input": "b", "teacher": None}) + "\n")  # line 4
+        with pytest.raises(ValueError, match=r"at line 4 has a null/NaN"):
+            load_traces(path)
+
+
 # ── Fit & route ───────────────────────────────────────────────────────────────
 
 def test_fit_and_route():
