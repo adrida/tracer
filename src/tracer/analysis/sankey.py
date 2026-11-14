@@ -66,7 +66,7 @@ def generate_sankey(
         raise FileNotFoundError(f"No qualitative report found at {qr_path}")
     qr = json.loads(qr_path.read_text())
 
-    coverage = manifest.get("coverage_cal") or qr.get("coverage", 0)
+    coverage = _flow_coverage(manifest, qr)
     n_traces = manifest.get("n_traces", 0)
     pct_h = coverage * 100
     pct_d = (1 - coverage) * 100
@@ -106,6 +106,15 @@ def generate_sankey(
     return str(output_path)
 
 
+def _flow_coverage(manifest: dict, qr: dict) -> float:
+    # The slices cover every supplied trace; manifest.coverage_cal only the
+    # certification partition.
+    coverage = qr.get("coverage")
+    if coverage is None:
+        coverage = manifest.get("coverage_cal")
+    return coverage or 0.0
+
+
 def _build_sankey_figure(manifest: dict, qr: dict, top_k: int, dark: bool):
     """Shared figure builder used by both generate_sankey and generate_sankey_div."""
     try:
@@ -118,7 +127,7 @@ def _build_sankey_figure(manifest: dict, qr: dict, top_k: int, dark: bool):
         key=lambda s: -s["count"],
     )
 
-    coverage = manifest.get("coverage_cal") or qr.get("coverage", 0)
+    coverage = _flow_coverage(manifest, qr)
     n_traces = manifest.get("n_traces", 0)
     top = label_slices[:top_k]
     n_top = len(top)

@@ -80,3 +80,19 @@ def test_sankey_labels_and_title_are_plain_text(report_files):
     assert all('<' not in label for label in fig.data[0].node.label)
     html = Path(generate_sankey(root, title=PAYLOAD)).read_text()
     assert_inert(html)
+
+
+def test_sankey_flows_use_report_population_not_certification_coverage():
+    pytest.importorskip('plotly')
+    from tracer.analysis.sankey import _build_sankey_figure, _flow_coverage
+    manifest = {'n_traces': 100, 'label_space': ['a', 'b'], 'coverage_cal': .9}
+    report = {'coverage': .6, 'slices': [
+        {'slice_name': 'label:a', 'count': 60, 'handled_rate': .75, 'deferred_rate': .25},
+        {'slice_name': 'label:b', 'count': 40, 'handled_rate': .375, 'deferred_rate': .625}]}
+    node = _build_sankey_figure(manifest, report, 15, False).data[0].node
+    assert list(node.label) == ['a', 'b', 'Surrogate  (60%)', 'Teacher / LLM  (40%)']
+
+    fig = _build_sankey_figure(manifest, report, 1, False)
+    assert list(fig.data[0].node.label)[1] == 'other (1 labels)'
+    assert sum(fig.data[0].link.value) == pytest.approx(100)
+    assert _flow_coverage(manifest, {}) == .9
