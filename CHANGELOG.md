@@ -46,6 +46,9 @@ npm release; check the installed package version before relying on them.
 - Handle concurrent HTTP requests and client disconnects, reject malformed or
   oversized request bodies, and close the server cleanly on interruption.
 - Correct update examples to use `new_embeddings=`.
+- Size Sankey flows and percentages from the qualitative report's own coverage
+  instead of the certification-partition coverage, which drew a phantom
+  "other (0 labels)" node whenever the two rates differed.
 
 ### Changed (breaking)
 - New fits reserve 20% of rows by default (`certification_fraction`) and use
